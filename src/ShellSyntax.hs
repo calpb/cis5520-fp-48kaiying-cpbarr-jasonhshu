@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 module ShellSyntax where
 
 import Control.Monad (mapM_)
@@ -22,8 +21,12 @@ instance Monoid Block where
 
 type Name = String -- either the name of a variable or the name of a field
 
-data Var = Name Name
+data Var = 
+  Name Name
     deriving (Eq, Show)
+
+var :: String -> Expression
+var = Var
 
 data Statement
   = Assign Var Expression -- x = e
@@ -70,3 +73,11 @@ data Bop
   | DashO -- logical OR. If one of the operands is true, then the condition becomes true.
   | DashA -- logical AND. If both the operands are true, then the condition becomes true otherwise false.
   deriving (Eq, Show, Enum, Bounded)
+
+level :: Bop -> Int
+level Times = 7
+level Divide = 7
+level Plus = 5
+level Minus = 5
+level Concat = 4
+level _ = 3 -- comparison operators

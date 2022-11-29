@@ -36,7 +36,7 @@ test_stringP =
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
 constP :: String -> a -> Parser a
-constP s x = wsP (P.string s) *> pure x
+constP s x = stringP s *> pure x
 
 test_constP :: Test
 test_constP =
@@ -54,8 +54,6 @@ parens x = P.between (stringP "(") x (stringP ")")
 braces :: Parser a -> Parser a
 braces x = P.between (stringP "{") x (stringP "}")
 
--- >>> P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]"
--- Right [1,1,1]
 doubleBrackets :: Parser a -> Parser a
 doubleBrackets x = P.between (stringP "[[") x (stringP "]]")
 
@@ -70,9 +68,8 @@ doubleBraces x = P.between (stringP "{{") x (stringP "}}")
 brackets :: Parser a -> Parser a
 brackets x = P.between (stringP "[") x (stringP "]")
 
-
 valueP :: Parser Value
-valueP = intValP <|> boolValP <|> nilValP <|> stringValP
+valueP = intValP <|> boolValP <|> stringValP
 
 -- >>> P.parse (many intValP) "1 2\n 3"
 -- Right [IntVal 1,IntVal 2,IntVal 3]
@@ -83,11 +80,6 @@ intValP = IntVal <$> wsP P.int
 -- Right [BoolVal True,BoolVal False,BoolVal True]
 boolValP :: Parser Value
 boolValP = constP "true" (BoolVal True) <|> constP "false" (BoolVal False)
-
--- >>> P.parse (many nilValP) "nil nil\n nil"
--- Right [NilVal,NilVal,NilVal]
-nilValP :: Parser Value
-nilValP = constP "nil" NilVal
 
 escQuotes :: Parser a -> Parser a
 escQuotes x = P.between (P.string "\"") x (P.string "\"")
@@ -109,6 +101,8 @@ test_stringValP =
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
+-- TODO : fix this part
+-- Figure out operation precedence 
 expP :: Parser Expression
 expP = compP
   where
@@ -119,74 +113,60 @@ expP = compP
     uopexpP =
       baseP
         <|> Op1 <$> uopP <*> uopexpP
-    baseP =
-      tableConstP
-        <|> Var <$> varP
+    baseP = 
+      Var <$> nameP
         <|> parens expP
+        <|> doubleParens expP
+        <|> doubleBrackets expP
+        <|> doubleBraces expP
         <|> Val <$> valueP
+
+
+varP :: Parser Var
+varP = Name <$> nameP
 
 -- | Parse an operator at a specified precedence level
 opAtLevel :: Int -> Parser (Expression -> Expression -> Expression)
 opAtLevel l = flip Op2 <$> P.filter (\x -> level x == l) bopP
 
--- >>>  P.parse (many varP) "x y z"
--- Right [Name "x", Name "y", Name "z"]
--- >>> P.parse varP "(x.y[1]).z"
--- Right (Dot (Var (Proj (Var (Dot (Var (Name "x")) "y")) (Val (IntVal 1)))) "z")
-varP :: Parser Var
-varP = undefined
-  -- mkVar <$> prefixP <*> some indexP <|> Name <$> nameP
-  -- where
-  --   mkVar :: Expression -> [Expression -> Var] -> Var
-  --   mkVar e l = foldr1 (\f p u -> p (Var (f u))) l e
-
-  --   prefixP :: Parser Expression
-  --   prefixP = parens expP <|> Var . Name <$> nameP
-
-  --   indexP :: Parser (Expression -> Var)
-  --   indexP =
-  --     flip Dot <$> (P.string "." *> nameP)
-  --       <|> flip Proj <$> brackets expP
-
 reserved :: [String]
 reserved =
-  -- fix me
-  [ "and",
+  [ 
     "break",
+    "continue",
     "do",
+    "done",
+    "echo", -- command
     "else",
-    "elseif",
-    "end",
+    "expr", -- evaluate expression
     "false",
+    "fi", 
     "for",
-    "function",
-    "goto",
     "if",   
     "in",
-    "local",
-    "nil",
-    "not",
-    "or",
-    "repeat",
+    "read", -- command 
     "return",
-    "then",
+    "then", 
     "true",
     "until",
     "while"
   ]
 
--- >>> P.parse (many nameP) "x sfds _ nil"
--- Right ["x","sfds","_"]
+-- >>> P.parse (many nameP) "x sfds _ -VAR5!"
+-- Right ["x"]
+
+-- Var assignment in the shell is strict, i.e. e=1 parses but e = 1 does not
 nameP :: Parser Name
 nameP =
-  wsP
-    ( P.filter
+  -- wsP
+  --   (
+       P.filter
         (`notElem` reserved)
         ( (:)
             <$> P.choice [P.upper, P.lower, P.char '_']
             <*> many (P.choice [P.upper, P.lower, P.digit, P.char '_'])
         )
-    )
+    -- )
 
 -- >>> P.parse (many uopP) "- - #"
 -- Right [Neg,Neg,Len]
@@ -194,9 +174,10 @@ uopP :: Parser Uop
 uopP =
   wsP
     ( P.choice
-        [ constP "-" Neg,
-          constP "not" Not,
-          constP "#" Len
+        [ 
+          constP "not" Not
+          -- ,
+          -- constP "#" Len
         ]
     )
 
@@ -225,21 +206,6 @@ bopP =
         ]
     )
 
--- >>> P.parse tableConstP "{ x = 2, [3] = false }"
--- Right (TableConst [FieldName "x" (Val (IntVal 2)),FieldKey (Val (IntVal 3)) (Val (BoolVal False))])
-tableConstP :: Parser Expression
-tableConstP =
-  TableConst
-    <$> wsP
-      ( braces
-          ( P.sepBy
-              ( ((FieldName <$> nameP) <|> (FieldKey <$> brackets expP))
-                  <*> (stringP "=" *> expP)
-              )
-              (stringP ",")
-          )
-      )
-
 statementP :: Parser Statement
 statementP =
   wsP
@@ -248,14 +214,15 @@ statementP =
           If
             <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP)
-            <*> (stringP "else" *> blockP <* stringP "end"),
-          While
-            <$> (stringP "while" *> expP)
-            <*> (stringP "do" *> blockP <* stringP "end"),
-          constP ";" Empty,
-          Repeat
-            <$> (stringP "repeat" *> blockP)
-            <*> (stringP "until" *> expP)
+            <*> (stringP "else" *> blockP <* stringP "end")
+          -- ,
+          -- While
+          --   <$> (stringP "while" *> expP)
+          --   <*> (stringP "do" *> blockP <* stringP "end"),
+          -- constP ";" Empty,
+          -- Repeat
+          --   <$> (stringP "repeat" *> blockP)
+          --   <*> (stringP "until" *> expP)
         ]
     )
 
@@ -323,20 +290,23 @@ test_comb =
 --           ~?= Right (TableConst [FieldName "x" (Val (IntVal 2)), FieldKey (Val (IntVal 3)) (Val (BoolVal False))])
 --       ]
 
--- test_stat =
---   "parsing statements"
---     ~: TestList
---       [ P.parse statementP ";" ~?= Right Empty,
---         P.parse statementP "x=3" ~?= Right (Assign (Name "x") (Val (IntVal 3))),
---         P.parse statementP "if x then y=nil else end"
---           ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
---         P.parse statementP "while nil do end"
---           ~?= Right (While (Val NilVal) (Block [])),
---         P.parse statementP "repeat ; ; until false"
---           ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
---       ]
+test_stat =
+  "parsing statements"
+    ~: TestList
+      [ 
+        -- P.parse statementP ";" ~?= Right Empty,
+        P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3)))
+        -- ,
+      --   P.parse statementP "if x then y=nil else end"
+      --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+      --   P.parse statementP "while nil do end"
+      --     ~?= Right (While (Val NilVal) (Block [])),
+      --   P.parse statementP "repeat ; ; until false"
+      --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+      ]
 
 -- >>> runTestTT test_stat
+-- Counts {cases = 1, tried = 1, errors = 0, failures = 0}
 
-test_all :: IO Counts
-test_all = runTestTT $ TestList [test_comb, test_value, test_exp, test_stat, tParseFiles]
+-- test_all :: IO Counts
+-- test_all = runTestTT $ TestList [test_comb, test_value, test_exp, test_stat, tParseFiles]
