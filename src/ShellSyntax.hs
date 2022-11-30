@@ -36,6 +36,7 @@ data Statement
   | For Expression Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
   | Echo [Expression] -- echo
+  | Command String [Expression]
   | Read -- read
   deriving (Eq, Show)
 

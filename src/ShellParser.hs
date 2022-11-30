@@ -174,6 +174,8 @@ reserved =
 -- >>> P.parse (many nameP) "x sfds _ -VAR5!"
 -- Right ["x"]
 
+-- TODO: not ignore new line 
+
 -- Var assignment in the shell is strict, i.e. e=1 parses but e = 1 does not
 nameP :: Parser Name
 nameP =
