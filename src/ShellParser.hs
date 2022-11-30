@@ -2,9 +2,9 @@ module ShellParser where
 
 import Control.Applicative
 import Data.Char qualified as Char
-import ShellSyntax
 import Parser (Parser)
 import Parser qualified as P
+import ShellSyntax
 import Test.HUnit (Assertion, Counts, Test (..), assert, runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 
@@ -35,6 +35,26 @@ test_stringP =
 -- >>> runTestTT test_stringP
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
+dollarP :: Parser Expression
+dollarP = P.char '$' *> expP
+
+expressionListP :: Parser [Expression]
+expressionListP = many (dollarP <|> expP)
+
+-- wsP (dollarP s) *> pure ()
+
+-- test_stringSubP :: Test
+-- test_stringSubP =
+--   TestList
+--     [ P.parse expressionListP "asdas asda $TEST"
+--         ~?= Right [[Val (StringVal "asdas asda "), Var "TEST"]]
+--         -- ,
+--         -- P.parse (stringSubP "a  @TEST") "b" ~?= Left "No parses",
+--         -- P.parse (many (stringSubP "a")) "a  a" ~?= Right [(), ()]
+--     ]
+
+-- >>> runTestTT test_stringSubP
+
 constP :: String -> a -> Parser a
 constP s x = stringP s *> pure x
 
@@ -62,6 +82,9 @@ doubleParens x = P.between (stringP "((") x (stringP "))")
 
 doubleBraces :: Parser a -> Parser a
 doubleBraces x = P.between (stringP "{{") x (stringP "}}")
+
+backticks :: Parser a -> Parser a
+backticks x = P.between (P.char '`') x (P.char '`')
 
 -- >>> P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]"
 -- Right [1,1,1]
@@ -102,7 +125,7 @@ test_stringValP =
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
 -- TODO : fix this part
--- Figure out operation precedence 
+-- Figure out operation precedence
 expP :: Parser Expression
 expP = compP
   where
@@ -113,14 +136,11 @@ expP = compP
     uopexpP =
       baseP
         <|> Op1 <$> uopP <*> uopexpP
-    baseP = 
-      Var <$> nameP
-        <|> parens expP
-        <|> doubleParens expP
-        <|> doubleBrackets expP
-        <|> doubleBraces expP
+    baseP =
+      Var <$> (P.char '$' *> nameP)
+        <|> parens expP -- ()
+        <|> brackets expP -- []
         <|> Val <$> valueP
-
 
 varP :: Parser Var
 varP = Name <$> nameP
@@ -131,8 +151,7 @@ opAtLevel l = flip Op2 <$> P.filter (\x -> level x == l) bopP
 
 reserved :: [String]
 reserved =
-  [ 
-    "break",
+  [ "break",
     "continue",
     "do",
     "done",
@@ -140,13 +159,13 @@ reserved =
     "else",
     "expr", -- evaluate expression
     "false",
-    "fi", 
+    "fi",
     "for",
-    "if",   
+    "if",
     "in",
-    "read", -- command 
+    "read", -- command
     "return",
-    "then", 
+    "then",
     "true",
     "until",
     "while"
@@ -160,13 +179,14 @@ nameP :: Parser Name
 nameP =
   -- wsP
   --   (
-       P.filter
-        (`notElem` reserved)
-        ( (:)
-            <$> P.choice [P.upper, P.lower, P.char '_']
-            <*> many (P.choice [P.upper, P.lower, P.digit, P.char '_'])
-        )
-    -- )
+  P.filter
+    (`notElem` reserved)
+    ( (:)
+        <$> P.choice [P.upper, P.lower, P.char '_']
+        <*> many (P.choice [P.upper, P.lower, P.digit, P.char '_'])
+    )
+
+-- )
 
 -- >>> P.parse (many uopP) "- - #"
 -- Right [Neg,Neg,Len]
@@ -174,10 +194,9 @@ uopP :: Parser Uop
 uopP =
   wsP
     ( P.choice
-        [ 
-          constP "not" Not
-          -- ,
-          -- constP "#" Len
+        [ constP "not" Not
+        -- ,
+        -- constP "#" Len
         ]
     )
 
@@ -215,14 +234,14 @@ statementP =
             <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP)
             <*> (stringP "else" *> blockP <* stringP "end")
-          -- ,
-          -- While
-          --   <$> (stringP "while" *> expP)
-          --   <*> (stringP "do" *> blockP <* stringP "end"),
-          -- constP ";" Empty,
-          -- Repeat
-          --   <$> (stringP "repeat" *> blockP)
-          --   <*> (stringP "until" *> expP)
+            -- ,
+            -- While
+            --   <$> (stringP "while" *> expP)
+            --   <*> (stringP "do" *> blockP <* stringP "end"),
+            -- constP ";" Empty,
+            -- Repeat
+            --   <$> (stringP "repeat" *> blockP)
+            --   <*> (stringP "until" *> expP)
         ]
     )
 
@@ -242,11 +261,11 @@ tParseFiles :: Test
 tParseFiles =
   "parse files"
     ~: TestList
-      [ 
-        -- "fact" ~: p "lu/fact.lu" wFact,
-        -- TODO fix me 
-      ]
+      []
   where
+    -- "fact" ~: p "lu/fact.lu" wFact,
+    -- TODO fix me
+
     p fn ast = do
       result <- parseLuFile fn
       case result of
@@ -293,16 +312,15 @@ test_comb =
 test_stat =
   "parsing statements"
     ~: TestList
-      [ 
-        -- P.parse statementP ";" ~?= Right Empty,
+      [ -- P.parse statementP ";" ~?= Right Empty,
         P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3)))
         -- ,
-      --   P.parse statementP "if x then y=nil else end"
-      --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
-      --   P.parse statementP "while nil do end"
-      --     ~?= Right (While (Val NilVal) (Block [])),
-      --   P.parse statementP "repeat ; ; until false"
-      --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+        --   P.parse statementP "if x then y=nil else end"
+        --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+        --   P.parse statementP "while nil do end"
+        --     ~?= Right (While (Val NilVal) (Block [])),
+        --   P.parse statementP "repeat ; ; until false"
+        --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
       ]
 
 -- >>> runTestTT test_stat
