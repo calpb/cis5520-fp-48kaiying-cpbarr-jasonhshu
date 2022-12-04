@@ -35,9 +35,7 @@ data Statement
   | While Expression Block -- while e do s end
   | For Expression Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
-  | Echo [Expression] -- echo
-  | Command String [Expression]
-  | Read -- read
+  | Command Expression [Expression]
   deriving (Eq, Show)
 
 data Expression
@@ -74,7 +72,7 @@ data Bop
   | Ge -- `>=, -ge` :: a -> a -> Bool
   | Lt -- `<, -lt`  :: a -> a -> Bool
   | Le -- `<=, -le` :: a -> a -> Bool
-  | Concat -- `..` :: String -> String -> String
+  | Concat -- `..` :: String -> String -> String +=
   | DashO -- logical OR. If one of the operands is true, then the condition becomes true.
   | DashA -- logical AND. If both the operands are true, then the condition becomes true otherwise false.
   deriving (Eq, Show, Enum, Bounded)
@@ -87,84 +85,84 @@ level Minus = 5
 level Concat = 4
 level _ = 3 -- comparison operators
 
--- echo.sh
-wEcho :: Block
-wEcho =
-  Block
-    [ Echo
-        [Val (StringVal "hello world!")]
-    ]
+-- -- echo.sh
+-- wEcho :: Block
+-- wEcho =
+--   Block
+--     [ Echo
+--         [Val (StringVal "hello world!")]
+--     ]
 
--- simple_if.sh
-wSimpleIf :: Block
-wSimpleIf =
-  Block
-    [ Assign (Name "a") (Val (IntVal 10)),
-      Assign (Name "b") (Val (IntVal 20)),
-      -- a == b
-      If
-        (Op2 (Var "a") Eq (Var "b"))
-        ( Block
-            [ Echo
-                [Val (StringVal "a is equal to b")]
-            ]
-        )
-        (Block []),
-      -- a != b
-      If
-        (Op2 (Var "a") Neq (Var "b"))
-        ( Block
-            [ Echo
-                [Val (StringVal "a is not equal to b")]
-            ]
-        )
-        (Block [])
-    ]
+-- -- simple_if.sh
+-- wSimpleIf :: Block
+-- wSimpleIf =
+--   Block
+--     [ Assign (Name "a") (Val (IntVal 10)),
+--       Assign (Name "b") (Val (IntVal 20)),
+--       -- a == b
+--       If
+--         (Op2 (Var "a") Eq (Var "b"))
+--         ( Block
+--             [ Echo
+--                 [Val (StringVal "a is equal to b")]
+--             ]
+--         )
+--         (Block []),
+--       -- a != b
+--       If
+--         (Op2 (Var "a") Neq (Var "b"))
+--         ( Block
+--             [ Echo
+--                 [Val (StringVal "a is not equal to b")]
+--             ]
+--         )
+--         (Block [])
+--     ]
 
--- arith_ops.sh
-wArithOps :: Block
-wArithOps =
-  Block
-    [ Assign (Name "a") (Val (IntVal 10)),
-      Assign (Name "b") (Val (IntVal 20)),
-      -- a + b
-      Assign
-        (Name "val")
-        (Expr (Op2 (Var "a") Plus (Var "b"))),
-      Echo
-        [ Val (StringVal "a + b : "),
-          Var "val"
-        ],
-      -- a - b
-      Assign
-        (Name "val")
-        (Expr (Op2 (Var "a") Minus (Var "b"))),
-      Echo
-        [ Val (StringVal "a - b : "),
-          Var "val"
-        ],
-      -- a \* b
-      Assign
-        (Name "val")
-        (Expr (Op2 (Var "a") Times (Var "b"))),
-      Echo
-        [ Val (StringVal "a * b : "),
-          Var "val"
-        ],
-      -- b / a
-      Assign
-        (Name "val")
-        (Expr (Op2 (Var "b") Divide (Var "a"))),
-      Echo
-        [ Val (StringVal "b / a : "),
-          Var "val"
-        ],
-      -- b % a
-      Assign
-        (Name "val")
-        (Expr (Op2 (Var "b") Modulo (Var "a"))),
-      Echo
-        [ Val (StringVal "b % a : "),
-          Var "val"
-        ]
-    ]
+-- -- arith_ops.sh
+-- wArithOps :: Block
+-- wArithOps =
+--   Block
+--     [ Assign (Name "a") (Val (IntVal 10)),
+--       Assign (Name "b") (Val (IntVal 20)),
+--       -- a + b
+--       Assign
+--         (Name "val")
+--         (Expr (Op2 (Var "a") Plus (Var "b"))),
+--       Echo
+--         [ Val (StringVal "a + b : "),
+--           Var "val"
+--         ],
+--       -- a - b
+--       Assign
+--         (Name "val")
+--         (Expr (Op2 (Var "a") Minus (Var "b"))),
+--       Echo
+--         [ Val (StringVal "a - b : "),
+--           Var "val"
+--         ],
+--       -- a \* b
+--       Assign
+--         (Name "val")
+--         (Expr (Op2 (Var "a") Times (Var "b"))),
+--       Echo
+--         [ Val (StringVal "a * b : "),
+--           Var "val"
+--         ],
+--       -- b / a
+--       Assign
+--         (Name "val")
+--         (Expr (Op2 (Var "b") Divide (Var "a"))),
+--       Echo
+--         [ Val (StringVal "b / a : "),
+--           Var "val"
+--         ],
+--       -- b % a
+--       Assign
+--         (Name "val")
+--         (Expr (Op2 (Var "b") Modulo (Var "a"))),
+--       Echo
+--         [ Val (StringVal "b % a : "),
+--           Var "val"
+--         ]
+--     ]
