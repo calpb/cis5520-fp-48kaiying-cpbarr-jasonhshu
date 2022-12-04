@@ -43,16 +43,6 @@ expressionListP = many (dollarP <|> expP)
 
 -- wsP (dollarP s) *> pure ()
 
--- test_stringSubP :: Test
--- test_stringSubP =
---   TestList
---     [ P.parse expressionListP "asdas asda $TEST"
---         ~?= Right [[Val (StringVal "asdas asda "), Var "TEST"]]
---         -- ,
---         -- P.parse (stringSubP "a  @TEST") "b" ~?= Left "No parses",
---         -- P.parse (many (stringSubP "a")) "a  a" ~?= Right [(), ()]
---     ]
-
 -- >>> runTestTT test_stringSubP
 
 constP :: String -> a -> Parser a
@@ -155,7 +145,6 @@ reserved =
     "continue",
     "do",
     "done",
-    "echo", -- command
     "else",
     "expr", -- evaluate expression
     "false",
@@ -163,7 +152,6 @@ reserved =
     "for",
     "if",
     "in",
-    "read", -- command
     "return",
     "then",
     "true",
@@ -174,7 +162,7 @@ reserved =
 -- >>> P.parse (many nameP) "x sfds _ -VAR5!"
 -- Right ["x"]
 
--- TODO: not ignore new line 
+-- TODO: not ignore new line
 
 -- Var assignment in the shell is strict, i.e. e=1 parses but e = 1 does not
 nameP :: Parser Name

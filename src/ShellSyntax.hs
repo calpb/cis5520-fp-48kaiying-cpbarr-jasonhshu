@@ -85,84 +85,92 @@ level Minus = 5
 level Concat = 4
 level _ = 3 -- comparison operators
 
--- -- echo.sh
--- wEcho :: Block
--- wEcho =
---   Block
---     [ Echo
---         [Val (StringVal "hello world!")]
---     ]
+-- echo.sh
+wEcho :: Block
+wEcho =
+  Block
+    [ Command
+        (Val (StringVal "echo"))
+        [Val (StringVal "hello world!")]
+    ]
 
--- -- simple_if.sh
--- wSimpleIf :: Block
--- wSimpleIf =
---   Block
---     [ Assign (Name "a") (Val (IntVal 10)),
---       Assign (Name "b") (Val (IntVal 20)),
---       -- a == b
---       If
---         (Op2 (Var "a") Eq (Var "b"))
---         ( Block
---             [ Echo
---                 [Val (StringVal "a is equal to b")]
---             ]
---         )
---         (Block []),
---       -- a != b
---       If
---         (Op2 (Var "a") Neq (Var "b"))
---         ( Block
---             [ Echo
---                 [Val (StringVal "a is not equal to b")]
---             ]
---         )
---         (Block [])
---     ]
+-- simple_if.sh
+wSimpleIf :: Block
+wSimpleIf =
+  Block
+    [ Assign (Name "a") (Val (IntVal 10)),
+      Assign (Name "b") (Val (IntVal 20)),
+      -- a == b
+      If
+        (Op2 (Var "a") Eq (Var "b"))
+        ( Block
+            [ Command
+                (Val (StringVal "echo"))
+                [Val (StringVal "a is equal to b")]
+            ]
+        )
+        (Block []),
+      -- a != b
+      If
+        (Op2 (Var "a") Neq (Var "b"))
+        ( Block
+            [ Command
+                (Val (StringVal "echo"))
+                [Val (StringVal "a is not equal to b")]
+            ]
+        )
+        (Block [])
+    ]
 
--- -- arith_ops.sh
--- wArithOps :: Block
--- wArithOps =
---   Block
---     [ Assign (Name "a") (Val (IntVal 10)),
---       Assign (Name "b") (Val (IntVal 20)),
---       -- a + b
---       Assign
---         (Name "val")
---         (Expr (Op2 (Var "a") Plus (Var "b"))),
---       Echo
---         [ Val (StringVal "a + b : "),
---           Var "val"
---         ],
---       -- a - b
---       Assign
---         (Name "val")
---         (Expr (Op2 (Var "a") Minus (Var "b"))),
---       Echo
---         [ Val (StringVal "a - b : "),
---           Var "val"
---         ],
---       -- a \* b
---       Assign
---         (Name "val")
---         (Expr (Op2 (Var "a") Times (Var "b"))),
---       Echo
---         [ Val (StringVal "a * b : "),
---           Var "val"
---         ],
---       -- b / a
---       Assign
---         (Name "val")
---         (Expr (Op2 (Var "b") Divide (Var "a"))),
---       Echo
---         [ Val (StringVal "b / a : "),
---           Var "val"
---         ],
---       -- b % a
---       Assign
---         (Name "val")
---         (Expr (Op2 (Var "b") Modulo (Var "a"))),
---       Echo
---         [ Val (StringVal "b % a : "),
---           Var "val"
---         ]
---     ]
+-- arith_ops.sh
+wArithOps :: Block
+wArithOps =
+  Block
+    [ Assign (Name "a") (Val (IntVal 10)),
+      Assign (Name "b") (Val (IntVal 20)),
+      -- a + b
+      Assign
+        (Name "val")
+        (Expr (Op2 (Var "a") Plus (Var "b"))),
+      Command
+        (Val (StringVal "echo"))
+        [ Val (StringVal "a + b : "),
+          Var "val"
+        ],
+      -- a - b
+      Assign
+        (Name "val")
+        (Expr (Op2 (Var "a") Minus (Var "b"))),
+      Command
+        (Val (StringVal "echo"))
+        [ Val (StringVal "a - b : "),
+          Var "val"
+        ],
+      -- a \* b
+      Assign
+        (Name "val")
+        (Expr (Op2 (Var "a") Times (Var "b"))),
+      Command
+        (Val (StringVal "echo"))
+        [ Val (StringVal "a * b : "),
+          Var "val"
+        ],
+      -- b / a
+      Assign
+        (Name "val")
+        (Expr (Op2 (Var "b") Divide (Var "a"))),
+      Command
+        (Val (StringVal "echo"))
+        [ Val (StringVal "b / a : "),
+          Var "val"
+        ],
+      -- b % a
+      Assign
+        (Name "val")
+        (Expr (Op2 (Var "b") Modulo (Var "a"))),
+      Command
+        (Val (StringVal "echo"))
+        [ Val (StringVal "b % a : "),
+          Var "val"
+        ]
+    ]
