@@ -5,9 +5,11 @@ import Data.List qualified as List
 import Data.Map (Map, (!?))
 import Data.Map qualified as Map
 import Data.Maybe (Maybe (Nothing), fromMaybe)
+import GHC.Base (undefined)
 import GHC.Real (underflowError)
 import ShellParser
 import ShellSyntax
+import ShellSyntax (Statement (Continue))
 import State (State)
 import State qualified as S
 import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
@@ -100,7 +102,7 @@ evalOp2 Le (IntVal i1) (IntVal i2) = BoolVal (i1 <= i2)
 evalOp2 Concat (StringVal s1) (StringVal s2) = StringVal (s1 ++ s2)
 evalOp2 DashO (BoolVal i1) (BoolVal i2) = BoolVal (i1 || i2)
 evalOp2 DashA (BoolVal i1) (BoolVal i2) = BoolVal (i1 && i2)
-evalOp2 _ _ _ = undefined -- throw error
+evalOp2 _ _ _ = undefined -- todo: throw error
 
 evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
@@ -140,29 +142,43 @@ eval (Block ss) = mapM_ evalS ss
 
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
-evalS = undefined
+evalS (Assign v e) = do
+  e' <- evalE e
+  envUpdate v e'
+evalS (If e sb) = do
+  e' <- evalE e
+  when (toBool e') $ eval sb
+evalS (IfElse e sb1 sb2) = do
+  e' <- evalE e
+  if toBool e' then eval sb1 else eval sb2
+evalS Continue = return -- think
+evalS Break = return -- think
+evalS s@(While e sb) = do
+  e' <- evalE e
+  if toBool e'
+    then eval sb >> evalS s
+    else return
+evalS s@(Until e sb) = do
+  eval sb
+  e' <- evalE e
+  if not (toBool e')
+    then evalS s
+    else return -- stop once expression is true
+evalS (For v arr sb) =
+  case arr of
+    [] -> return
+    x : tl -> do
+      prevTable <- S.get -- add loop var in state
+      envUpdate v x
+      eval sb
+      S.put prevTable -- restore state
+      evalS (For v tl sb)
+evalS Command cmd argsarr = do
+  cmd' <- evalE cmd
+  -- args' <- evalE <$> argsarr
+  -- todo fix me
+  return
 
--- evalS (If e s1 s2) = do
---   v <- evalE e
---   if toBool v then eval s1 else eval s2
--- evalS w@(While e ss) = do
---   v <- evalE e
---   when (toBool v) $ do
---     eval ss
---     evalS w
--- evalS (Assign _v _e) = do
---   -- update global variable or table field v to value of e
---   v <- evalE _e
---   ref <- resolveVar _v
---   case ref of
---     Just ref' -> update ref' v
---     Nothing -> return ()
--- evalS w@(Until _b _e) = do
---   -- keep evaluating block b until expression e is true
---   eval _b
---   v <- evalE _e
---   unless (toBool v) $ do
---     evalS w
 -- evalS w@(Command s e) = do
 --   -- e = [Val, Val, Var, Val] -> [Vals] -> system.process.shell
 --   -- call substituteExpr on e
