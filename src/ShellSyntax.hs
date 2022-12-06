@@ -31,9 +31,12 @@ var = Var
 
 data Statement
   = Assign Var Expression -- x = e
-  | If Expression Block Block -- if e then s1 else s2 end
+  | If Expression Block
+  | IfElse Expression Block Block -- if e then s1 else s2 end
+  | Continue
+  | Break
   | While Expression Block -- while e do s end
-  | For Expression Block -- For loop
+  | For Var [Value] Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
   | Command Expression [Expression]
   deriving (Eq, Show)
@@ -108,8 +111,7 @@ wSimpleIf =
                 (Val (StringVal "echo"))
                 [Val (StringVal "a is equal to b")]
             ]
-        )
-        (Block []),
+        ),
       -- a != b
       If
         (Op2 (Var "a") Neq (Var "b"))
@@ -119,7 +121,6 @@ wSimpleIf =
                 [Val (StringVal "a is not equal to b")]
             ]
         )
-        (Block [])
     ]
 
 -- arith_ops.sh

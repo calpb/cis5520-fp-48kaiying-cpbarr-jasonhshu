@@ -8,6 +8,12 @@ import ShellSyntax
 import Test.HUnit (Assertion, Counts, Test (..), assert, runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 
+-- Parse For loops (sepby?)
+-- Parse Array after for loop (for now, just have them explicitly defined in the for loop)
+-- Handle continue and break (not just in parsing)
+-- Parse between backticks (expect a command and some arguments)
+-- Handle semicolons like newline
+
 wsP :: Parser a -> Parser a
 wsP p = p <* many P.space
 
@@ -198,7 +204,7 @@ bopP =
     ( P.choice
         [ constP "+" Plus,
           constP "-" Minus,
-          constP "*" Times,
+          constP "\\*" Times,
           constP "//" Divide,
           constP "%" Modulo,
           constP "==" Eq,
@@ -219,19 +225,26 @@ statementP :: Parser Statement
 statementP =
   wsP
     ( P.choice
-        [ Assign <$> varP <*> (stringP "=" *> expP),
+        [ Continue <$> stringP "continue",
+          Break <$> stringP "break",
+          Assign <$> varP <*> (stringP "=" *> expP),
           If
             <$> (stringP "if" *> expP)
+            <*> (stringP "then" *> blockP <* stringP "fi"),
+          IfElse
+            <$> (stringP "ifelse" *> expP)
             <*> (stringP "then" *> blockP)
-            <*> (stringP "else" *> blockP <* stringP "end")
-            -- ,
-            -- While
-            --   <$> (stringP "while" *> expP)
-            --   <*> (stringP "do" *> blockP <* stringP "end"),
-            -- constP ";" Empty,
-            -- Repeat
-            --   <$> (stringP "repeat" *> blockP)
-            --   <*> (stringP "until" *> expP)
+            <*> (stringP "else" *> blockP <* stringP "fi"),
+          While
+            <$> (stringP "while" *> expP)
+            <*> (stringP "do" *> blockP <* stringP "done"),
+          For
+            <$> (stringP "for" *> varP)
+            <*> (stringP "in" *> many valueP)
+            <*> (stringP "do" *> blockP <* stringP "done"),
+          Until
+            <$> (stringP "until" *> expP)
+            <*> (stringP "do" *> blockP <* stringP "done")
         ]
     )
 
