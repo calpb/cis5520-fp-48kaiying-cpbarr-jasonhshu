@@ -5,7 +5,7 @@ import Data.List qualified as List
 import Data.Map (Map, (!?))
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import ShellParser 
+import ShellParser
 import ShellSyntax
 import State (State)
 import State qualified as S
@@ -39,19 +39,7 @@ envGet n = do
 envUpdate :: Name -> Value -> State Store ()
 envUpdate n v = do
   table <- S.get
-  undefined
-
--- update :: Reference -> Value -> State Store ()
--- update (_, NilVal) _ = return ()
--- update (n, k) v' =
---   S.get >>= \s -> case Map.lookup n s of
---     Just t ->
---       let t' =
---             if v' == NilVal
---               then Map.delete k t
---               else Map.insert k v' t
---        in S.put (Map.insert n t' s)
---     Nothing -> return ()
+  S.put (Map.insert n v table)
 
 test_env :: Test
 test_env =
@@ -69,8 +57,8 @@ test_env =
         S.evalState (envUpdate "x" (IntVal 100) >> envUpdate "x" (IntVal 200) >> envGet "x") extendedStore ~?= Just (IntVal 200)
       ]
 
--- -- >>> runTestTT test_update
--- -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
+-- >>> runTestTT test_env
+-- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
 -- | Expression evaluator
 evalE :: Expression -> State Store Value
@@ -82,7 +70,7 @@ evalE (Var v) = do
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 _o _e1) = undefined
-    -- S.get >>= (\s -> evalOp1 s _o <$> evalE _e1)
+-- S.get >>= (\s -> evalOp1 s _o <$> evalE _e1)
 evalE (Expr e) = undefined
 
 -- | Handle unary operations
