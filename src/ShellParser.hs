@@ -240,7 +240,7 @@ statementP =
             <*> (stringP "do" *> blockP <* stringP "done"),
           For
             <$> (stringP "for" *> varP)
-            <*> (stringP "in" *> many valueP)
+            <*> (stringP "in" *> many stringValP)
             <*> (stringP "do" *> blockP <* stringP "done"),
           Until
             <$> (stringP "until" *> expP)
