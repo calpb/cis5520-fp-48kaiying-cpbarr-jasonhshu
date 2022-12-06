@@ -4,8 +4,9 @@ import Control.Monad (unless, when)
 import Data.List qualified as List
 import Data.Map (Map, (!?))
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe)
-import ShellParser 
+import Data.Maybe (Maybe (Nothing), fromMaybe)
+import GHC.Real (underflowError)
+import ShellParser
 import ShellSyntax
 import State (State)
 import State qualified as S
@@ -39,19 +40,7 @@ envGet n = do
 envUpdate :: Name -> Value -> State Store ()
 envUpdate n v = do
   table <- S.get
-  undefined
-
--- update :: Reference -> Value -> State Store ()
--- update (_, NilVal) _ = return ()
--- update (n, k) v' =
---   S.get >>= \s -> case Map.lookup n s of
---     Just t ->
---       let t' =
---             if v' == NilVal
---               then Map.delete k t
---               else Map.insert k v' t
---        in S.put (Map.insert n t' s)
---     Nothing -> return ()
+  S.put (Map.insert n v table)
 
 test_env :: Test
 test_env =
@@ -69,8 +58,8 @@ test_env =
         S.evalState (envUpdate "x" (IntVal 100) >> envUpdate "x" (IntVal 200) >> envGet "x") extendedStore ~?= Just (IntVal 200)
       ]
 
--- -- >>> runTestTT test_update
--- -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
+-- >>> runTestTT test_env
+-- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
 
 -- | Expression evaluator
 evalE :: Expression -> State Store Value
@@ -82,7 +71,7 @@ evalE (Var v) = do
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 _o _e1) = undefined
-    -- S.get >>= (\s -> evalOp1 s _o <$> evalE _e1)
+-- S.get >>= (\s -> evalOp1 s _o <$> evalE _e1)
 evalE (Expr e) = undefined
 
 -- | Handle unary operations
@@ -124,12 +113,12 @@ test_evaluateUop :: Test
 test_evaluateUop =
   "evaluate uop"
     ~: TestList
-      [ evaluate (Op1 Not (Val NilVal)) initialStore ~?= BoolVal True,
+      [ -- evaluate (Op1 Not (Val NilVal)) initialStore ~?= BoolVal True,
         evaluate (Op1 Not (Val (IntVal 3))) initialStore ~?= BoolVal False,
         evaluate (Op1 DashZLen (Val (BoolVal False))) initialStore ~?= BoolVal True,
         evaluate (Op1 DashZLen (Val (BoolVal True))) initialStore ~?= BoolVal False,
         evaluate (Op1 DashNLen (Val (StringVal ""))) initialStore ~?= BoolVal False,
-        evaluate (Op1 DashNLen (Val (TableVal "_G"))) initialStore ~?= BoolVal False,
+        -- evaluate (Op1 DashNLen (Val (TableVal "_G"))) initialStore ~?= BoolVal False,
         evaluate (Op1 Str (Val (StringVal "_G"))) initialStore ~?= BoolVal False,
         evaluate (Op1 Str (Val (StringVal ""))) initialStore ~?= BoolVal True
       ]
@@ -168,38 +157,42 @@ eval (Block ss) = mapM_ evalS ss
 
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
-evalS (If e s1 s2) = do
-  v <- evalE e
-  if toBool v then eval s1 else eval s2
-evalS w@(While e ss) = do
-  v <- evalE e
-  when (toBool v) $ do
-    eval ss
-    evalS w
-evalS (Assign _v _e) = do
-  -- update global variable or table field v to value of e
-  v <- evalE _e
-  ref <- resolveVar _v
-  case ref of
-    Just ref' -> update ref' v
-    Nothing -> return ()
-evalS w@(Until _b _e) = do
-  -- keep evaluating block b until expression e is true
-  eval _b
-  v <- evalE _e
-  unless (toBool v) $ do
-    evalS w
-evalS w@(Command s e) = do
-  -- e = [Val, Val, Var, Val] -> [Vals] -> system.process.shell
-  -- call substituteExpr on e
-  -- 1 = echo
-  -- 1 "text here"
-  undefined
+evalS = undefined
+
+-- evalS (If e s1 s2) = do
+--   v <- evalE e
+--   if toBool v then eval s1 else eval s2
+-- evalS w@(While e ss) = do
+--   v <- evalE e
+--   when (toBool v) $ do
+--     eval ss
+--     evalS w
+-- evalS (Assign _v _e) = do
+--   -- update global variable or table field v to value of e
+--   v <- evalE _e
+--   ref <- resolveVar _v
+--   case ref of
+--     Just ref' -> update ref' v
+--     Nothing -> return ()
+-- evalS w@(Until _b _e) = do
+--   -- keep evaluating block b until expression e is true
+--   eval _b
+--   v <- evalE _e
+--   unless (toBool v) $ do
+--     evalS w
+-- evalS w@(Command s e) = do
+--   -- e = [Val, Val, Var, Val] -> [Vals] -> system.process.shell
+--   -- call substituteExpr on e
+--   -- 1 = echo
+--   -- 1 "text here"
+--   undefined
 
 substituteExpr :: [Expression] -> [Expression]
 substituteExpr [] = []
-substituteExpr ((Var x) : xs) = evalE x : substituteExpr xs
-substituteExpr ((Val x) : xs) = x : substituteExpr xs
+substituteExpr _ = undefined
+
+-- substituteExpr ((Var x) : xs) = evalE x : substituteExpr xs
+-- substituteExpr ((Val x) : xs) = x : substituteExpr xs
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
