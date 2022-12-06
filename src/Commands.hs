@@ -1,6 +1,5 @@
 module Commands where
 
-import ShellInterpreter
 import ShellSyntax
 import System.IO
 import System.Process

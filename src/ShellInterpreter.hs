@@ -1,5 +1,6 @@
 module ShellInterpreter where
 
+import Commands
 import Control.Monad (unless, when)
 import Data.List qualified as List
 import Data.Map (Map, (!?))
@@ -175,23 +176,15 @@ evalS (For v arr sb) =
       evalS (For v tl sb)
 evalS Command cmd argsarr = do
   cmd' <- evalE cmd
-  -- args' <- evalE <$> argsarr
-  -- todo fix me
-  return
-
--- evalS w@(Command s e) = do
---   -- e = [Val, Val, Var, Val] -> [Vals] -> system.process.shell
---   -- call substituteExpr on e
---   -- 1 = echo
---   -- 1 "text here"
---   undefined
-
-substituteExpr :: [Expression] -> [Expression]
-substituteExpr [] = []
-substituteExpr _ = undefined
-
--- substituteExpr ((Var x) : xs) = evalE x : substituteExpr xs
--- substituteExpr ((Val x) : xs) = x : substituteExpr xs
+  let args' = foldr comb [] argsarr
+  ret <- Commands.runCommand cmd' args'
+  -- todo: currently dont do anything with the return value
+  return ()
+  where
+    comb :: Expression -> [Value] -> [Value]
+    comb e acc = do
+      e' <- evalE e
+      e' : acc
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
