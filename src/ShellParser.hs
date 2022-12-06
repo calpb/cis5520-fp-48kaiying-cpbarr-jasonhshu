@@ -225,8 +225,8 @@ statementP :: Parser Statement
 statementP =
   wsP
     ( P.choice
-        [ Continue <$> stringP "continue",
-          Break <$> stringP "break",
+        [ constP "continue" Continue,
+          constP "break" Break,
           Assign <$> varP <*> (stringP "=" *> expP),
           If
             <$> (stringP "if" *> expP)
