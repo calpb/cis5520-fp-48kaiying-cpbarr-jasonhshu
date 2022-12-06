@@ -64,29 +64,31 @@ test_env =
 -- | Expression evaluator
 evalE :: Expression -> State Store Value
 evalE (Var v) = do
-  mr <- envGet v -- see above
+  mr <- envGet v
   case mr of
     Just r -> return r
     Nothing -> return $ StringVal "yooooooo thats not allowed " -- todo: THROW ERROR FOUND UNDEFINED VARIABLE, could use either monad
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
-evalE (Op1 _o _e1) = undefined
--- S.get >>= (\s -> evalOp1 s _o <$> evalE _e1)
-evalE (Expr e) = undefined
+evalE (Op1 o e1) = evalOp1 o <$> evalE e1
+evalE (Expr e) = evalE e
 
 -- | Handle unary operations
 evalOp1 :: Uop -> Value -> Value
 evalOp1 Not v = BoolVal $ not (toBool v)
-evalOp1 DashZLen v = undefined
-evalOp1 DashNLen v = undefined
-evalOp1 Str v = undefined
+evalOp1 DashZLen (StringVal []) = BoolVal True
+evalOp1 DashZLen (StringVal _) = BoolVal False
+evalOp1 DashNLen (StringVal []) = BoolVal False
+evalOp1 DashNLen (StringVal _) = BoolVal True
+evalOp1 Str (StringVal s) = IntVal $ length s
+evalOp1 _ _ = undefined -- other operations are not defined, todo: throw error
 
 -- | Handle binary operations
 evalOp2 :: Bop -> Value -> Value -> Value
 evalOp2 Plus (IntVal i1) (IntVal i2) = IntVal (i1 + i2)
 evalOp2 Minus (IntVal i1) (IntVal i2) = IntVal (i1 - i2)
 evalOp2 Times (IntVal i1) (IntVal i2) = IntVal (i1 * i2)
-evalOp2 Divide (IntVal _) (IntVal 0) = undefined -- throw error
+evalOp2 Divide (IntVal _) (IntVal 0) = undefined -- todo: throw error
 evalOp2 Divide (IntVal i1) (IntVal i2) = IntVal (i1 `div` i2)
 evalOp2 Modulo (IntVal i1) (IntVal i2) = IntVal (i1 `mod` i2)
 evalOp2 Eq (IntVal i1) (IntVal i2) = BoolVal (i1 == i2)
@@ -113,36 +115,17 @@ test_evaluateUop :: Test
 test_evaluateUop =
   "evaluate uop"
     ~: TestList
-      [ -- evaluate (Op1 Not (Val NilVal)) initialStore ~?= BoolVal True,
-        evaluate (Op1 Not (Val (IntVal 3))) initialStore ~?= BoolVal False,
-        evaluate (Op1 DashZLen (Val (BoolVal False))) initialStore ~?= BoolVal True,
-        evaluate (Op1 DashZLen (Val (BoolVal True))) initialStore ~?= BoolVal False,
+      [ evaluate (Op1 Not (Val (IntVal 3))) initialStore ~?= BoolVal False,
+        evaluate (Op1 DashZLen (Val (StringVal ""))) initialStore ~?= BoolVal True,
+        evaluate (Op1 DashZLen (Val (StringVal "txt"))) initialStore ~?= BoolVal False,
         evaluate (Op1 DashNLen (Val (StringVal ""))) initialStore ~?= BoolVal False,
-        -- evaluate (Op1 DashNLen (Val (TableVal "_G"))) initialStore ~?= BoolVal False,
-        evaluate (Op1 Str (Val (StringVal "_G"))) initialStore ~?= BoolVal False,
-        evaluate (Op1 Str (Val (StringVal ""))) initialStore ~?= BoolVal True
+        evaluate (Op1 DashNLen (Val (StringVal "txt"))) initialStore ~?= BoolVal True,
+        evaluate (Op1 Str (Val (StringVal "yeehaw"))) initialStore ~?= IntVal 6,
+        evaluate (Op1 Str (Val (StringVal ""))) initialStore ~?= IntVal 0
       ]
 
--- -- >>> runTestTT test_evaluateNot
--- -- Counts {cases = 6, tried = 6, errors = 0, failures = 0}
-
--- test_evaluateLen :: Test
--- test_evaluateLen =
---   "evaluate len"
---     ~: TestList
---       [ evaluate (Op1 Len (Val (StringVal "552"))) extendedStore ~?= IntVal 3,
---         evaluate (Op1 Len (Val (TableVal "_G"))) extendedStore ~?= IntVal 2,
---         evaluate (Op1 Len (Val (TableVal "_t1"))) extendedStore ~?= IntVal 2,
---         evaluate (Op1 Len (Val NilVal)) initialStore ~?= NilVal,
---         evaluate (Op1 Len (Val (IntVal 3))) initialStore ~?= IntVal 3,
---         evaluate (Op1 Len (Val (BoolVal False))) initialStore ~?= IntVal 0,
---         evaluate (Op1 Len (Val (BoolVal True))) initialStore ~?= IntVal 1,
---         evaluate (Op1 Len (Val (StringVal ""))) initialStore ~?= IntVal 0,
---         evaluate (Op1 Len (Val (TableVal "_t1"))) initialStore ~?= NilVal
---       ]
-
--- -- >>> runTestTT test_evaluateLen
--- -- Counts {cases = 9, tried = 9, errors = 0, failures = 0}
+-- >>> runTestTT test_evaluateUop
+-- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
 
 -- prop_evalE_total :: Expression -> Store -> Bool
 -- prop_evalE_total e s = case evaluate e s of
