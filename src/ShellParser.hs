@@ -225,8 +225,8 @@ statementP :: Parser Statement
 statementP =
   wsP
     ( P.choice
-        [ Continue <$> stringP "continue",
-          Break <$> stringP "break",
+        [ constP "continue" Continue,
+          constP "break" Break,
           Assign <$> varP <*> (stringP "=" *> expP),
           If
             <$> (stringP "if" *> expP)
@@ -240,7 +240,7 @@ statementP =
             <*> (stringP "do" *> blockP <* stringP "done"),
           For
             <$> (stringP "for" *> varP)
-            <*> (stringP "in" *> many valueP)
+            <*> (stringP "in" *> many stringValP)
             <*> (stringP "do" *> blockP <* stringP "done"),
           Until
             <$> (stringP "until" *> expP)
