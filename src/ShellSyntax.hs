@@ -38,7 +38,7 @@ data Statement
   | While Expression Block -- while e do s end
   | For Var [Value] Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
-  | Command String [String]
+  | CommandStatement String [String]
   deriving (Eq, Show)
 
 data Expression
@@ -47,6 +47,7 @@ data Expression
   | Op1 Uop Expression -- unary operators
   | Op2 Expression Bop Expression -- binary operators
   | Expr Expression -- expr
+  | CommandExpression String [String]
   deriving (Eq, Show)
 
 data Value

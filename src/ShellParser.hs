@@ -245,7 +245,17 @@ statementP =
     ( P.choice
         [ constP "continue" Continue,
           constP "break" Break,
-          Assign <$> varP <*> (stringP "=" *> expP),
+          Assign
+            <$> varP
+            <*> ( stringP "="
+                    *> ( expP
+                           <|> backticks
+                             ( CommandExpression
+                                 <$> stringLiteralP
+                                 <*> many stringLiteralP
+                             )
+                       )
+                ),
           If
             <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP <* stringP "fi"),
@@ -263,7 +273,7 @@ statementP =
           Until
             <$> (stringP "until" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
-          Command <$> stringLiteralP <*> many stringLiteralP
+          CommandStatement <$> stringLiteralP <*> many stringLiteralP
         ]
     )
 
