@@ -74,7 +74,15 @@ evalE (Var v) = do
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
-evalE (Expr e) = evalE e
+evalE (CommandExpression cmd argsarr) = do
+  cmd' <- evalE cmd
+  let args' = foldr comb [] argsarr
+  Commands.runCommand cmd' args' -- return the value from runCommand
+  where
+    comb :: Expression -> [Value] -> [Value]
+    comb e acc = do
+      e' <- evalE e
+      e' : acc
 
 -- | Handle unary operations
 evalOp1 :: Uop -> Value -> Value
@@ -83,7 +91,6 @@ evalOp1 DashZLen (StringVal []) = BoolVal True
 evalOp1 DashZLen (StringVal _) = BoolVal False
 evalOp1 DashNLen (StringVal []) = BoolVal False
 evalOp1 DashNLen (StringVal _) = BoolVal True
-evalOp1 Str (StringVal s) = IntVal $ length s
 evalOp1 _ _ = undefined -- other operations are not defined, todo: throw error
 
 -- | Handle binary operations
@@ -112,6 +119,7 @@ evaluate e = S.evalState (evalE e)
 -- used as a condition.
 toBool :: Value -> Bool
 toBool (BoolVal False) = False
+toBool (StringVal "") = False
 toBool _ = True
 
 test_evaluateUop :: Test
@@ -174,13 +182,16 @@ evalS (For v arr sb) =
       eval sb
       S.put prevTable -- restore state
       evalS (For v tl sb)
-evalS Command cmd argsarr = do
+evalS CommandStatement cmd argsarr = do
   cmd' <- evalE cmd
   let args' = foldr comb [] argsarr
   ret <- Commands.runCommand cmd' args'
-  -- todo: currently dont do anything with the return value
   return ()
   where
+    -- case ret of
+    --   Right x -> return x
+    --   Left x  -> putStrLn x
+
     comb :: Expression -> [Value] -> [Value]
     comb e acc = do
       e' <- evalE e
@@ -332,7 +343,7 @@ exec = S.execState . eval
 --           go ss
 --         -- quit the stepper
 --         Just (":q", _) -> return ()
---         -- run current block to completion
+--         -- run current block to completion, use this to run the file
 --         Just (":r", _) ->
 --           let s' = exec (block ss) (store ss)
 --            in go ss {block = mempty, store = s', history = Just ss}

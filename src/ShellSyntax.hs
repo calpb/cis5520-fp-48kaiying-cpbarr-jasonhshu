@@ -38,7 +38,7 @@ data Statement
   | While Expression Block -- while e do s end
   | For Var [Value] Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
-  | CommandStatement String [String]
+  | CommandStatement Expression [Expression]
   deriving (Eq, Show)
 
 data Expression
@@ -46,8 +46,8 @@ data Expression
   | Val Value -- literal values
   | Op1 Uop Expression -- unary operators
   | Op2 Expression Bop Expression -- binary operators
-  | Expr Expression -- expr
-  | CommandExpression String [String]
+  | Expr Expression
+  | CommandExpression Expression [Expression] -- x=`echo "hello"`
   deriving (Eq, Show)
 
 data Value
@@ -61,7 +61,6 @@ data Uop
   = Not -- `!` :: Bool -> Bool
   | DashZLen -- Checks if the given string operand size is zero; if it is zero length, then it returns true.
   | DashNLen -- checks if string op size is non-zero if len != 0 then true
-  | Str -- Checks if str is not the empty string; if it is empty, then it returns false.
   deriving (Eq, Show, Enum, Bounded)
 
 data Bop
@@ -76,7 +75,7 @@ data Bop
   | Ge -- `>=, -ge` :: a -> a -> Bool
   | Lt -- `<, -lt`  :: a -> a -> Bool
   | Le -- `<=, -le` :: a -> a -> Bool
-  | Concat -- `..` :: String -> String -> String +=
+  | Concat -- `+=` :: String -> String -> String
   | DashO -- logical OR. If one of the operands is true, then the condition becomes true.
   | DashA -- logical AND. If both the operands are true, then the condition becomes true otherwise false.
   deriving (Eq, Show, Enum, Bounded)
@@ -93,7 +92,7 @@ level _ = 3 -- comparison operators
 wEcho :: Block
 wEcho =
   Block
-    [ Command
+    [ CommandStatement
         (Val (StringVal "echo"))
         [Val (StringVal "hello world!")]
     ]
@@ -108,7 +107,7 @@ wSimpleIf =
       If
         (Op2 (Var "a") Eq (Var "b"))
         ( Block
-            [ Command
+            [ CommandStatement
                 (Val (StringVal "echo"))
                 [Val (StringVal "a is equal to b")]
             ]
@@ -117,7 +116,7 @@ wSimpleIf =
       If
         (Op2 (Var "a") Neq (Var "b"))
         ( Block
-            [ Command
+            [ CommandStatement
                 (Val (StringVal "echo"))
                 [Val (StringVal "a is not equal to b")]
             ]
@@ -133,8 +132,8 @@ wArithOps =
       -- a + b
       Assign
         (Name "val")
-        (Expr (Op2 (Var "a") Plus (Var "b"))),
-      Command
+        (Op2 (Var "a") Plus (Var "b")),
+      CommandStatement
         (Val (StringVal "echo"))
         [ Val (StringVal "a + b : "),
           Var "val"
@@ -142,8 +141,8 @@ wArithOps =
       -- a - b
       Assign
         (Name "val")
-        (Expr (Op2 (Var "a") Minus (Var "b"))),
-      Command
+        (Op2 (Var "a") Minus (Var "b")),
+      CommandStatement
         (Val (StringVal "echo"))
         [ Val (StringVal "a - b : "),
           Var "val"
@@ -151,8 +150,8 @@ wArithOps =
       -- a \* b
       Assign
         (Name "val")
-        (Expr (Op2 (Var "a") Times (Var "b"))),
-      Command
+        (Op2 (Var "a") Times (Var "b")),
+      CommandStatement
         (Val (StringVal "echo"))
         [ Val (StringVal "a * b : "),
           Var "val"
@@ -160,8 +159,8 @@ wArithOps =
       -- b / a
       Assign
         (Name "val")
-        (Expr (Op2 (Var "b") Divide (Var "a"))),
-      Command
+        (Op2 (Var "b") Divide (Var "a")),
+      CommandStatement
         (Val (StringVal "echo"))
         [ Val (StringVal "b / a : "),
           Var "val"
@@ -169,8 +168,8 @@ wArithOps =
       -- b % a
       Assign
         (Name "val")
-        (Expr (Op2 (Var "b") Modulo (Var "a"))),
-      Command
+        (Op2 (Var "b") Modulo (Var "a")),
+      CommandStatement
         (Val (StringVal "echo"))
         [ Val (StringVal "b % a : "),
           Var "val"

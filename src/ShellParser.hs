@@ -1,7 +1,6 @@
 module ShellParser where
 
 import Control.Applicative
-import Data.Char (isSpace)
 import Data.Char qualified as Char
 import Parser (Parser)
 import Parser qualified as P
@@ -41,11 +40,11 @@ test_stringP =
 -- >>> runTestTT test_stringP
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
-dollarP :: Parser Expression
-dollarP = P.char '$' *> expP
+-- dollarP :: Parser Expression
+-- dollarP = P.char '$' *> expP
 
-expressionListP :: Parser [Expression]
-expressionListP = many (dollarP <|> expP)
+-- expressionListP :: Parser [Expression]
+-- expressionListP = many (dollarP <|> expP)
 
 -- wsP (dollarP s) *> pure ()
 
@@ -120,13 +119,14 @@ test_stringValP =
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
-stringNoSpaceP :: Parser String
+stringNoSpaceP :: Parser Value
 stringNoSpaceP =
-  wsP
-    ( (:)
-        <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
-        <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
-    )
+  StringVal
+    <$> wsP
+      ( (:)
+          <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
+          <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
+      )
 
 -- >>> P.parse stringNoSpaceP "echo 1 2"
 -- Right "echo"
@@ -134,9 +134,8 @@ stringNoSpaceP =
 -- >>> P.parse (many stringNoSpaceP) "echo 1 2"
 -- Right ["echo","1","2"]
 
-stringLiteralP :: Parser String
-stringLiteralP =
-  wsP (escQuotes (many (P.satisfy ('\"' /=)))) <|> stringNoSpaceP
+stringLiteralP :: Parser Value
+stringLiteralP = stringValP <|> stringNoSpaceP
 
 -- TODO : fix this part
 -- Figure out operation precedence
@@ -151,8 +150,9 @@ expP = compP
       baseP
         <|> Op1 <$> uopP <*> uopexpP
     baseP =
-      Var <$> (P.char '$' *> nameP)
+      wsP (Var <$> (P.char '$' *> nameP))
         <|> parens expP -- ()
+        <|> backticks expP -- ``
         <|> brackets expP -- []
         <|> Val <$> valueP
 
@@ -170,7 +170,6 @@ reserved =
     "do",
     "done",
     "else",
-    "expr", -- evaluate expression
     "false",
     "fi",
     "for",
@@ -208,9 +207,9 @@ uopP :: Parser Uop
 uopP =
   wsP
     ( P.choice
-        [ constP "not" Not
-        -- ,
-        -- constP "#" Len
+        [ constP "!" Not,
+          constP "-z" DashZLen,
+          constP "-n" DashNLen
         ]
     )
 
@@ -220,12 +219,7 @@ bopP :: Parser Bop
 bopP =
   wsP
     ( P.choice
-        [ constP "+" Plus,
-          constP "-" Minus,
-          constP "\\*" Times,
-          constP "//" Divide,
-          constP "%" Modulo,
-          constP "==" Eq,
+        [ constP "==" Eq,
           constP "-eq" Eq,
           constP ">=" Ge,
           constP "-ge" Ge,
@@ -235,7 +229,16 @@ bopP =
           constP "-le" Le,
           constP "<" Lt,
           constP "-lt" Lt,
-          constP ".." Concat
+          constP "!=" Neq,
+          constP "-ne" Neq,
+          constP "+=" Concat,
+          constP "-o" DashO,
+          constP "-a" DashA,
+          constP "+" Plus,
+          constP "-" Minus,
+          constP "\\*" Times,
+          constP "//" Divide,
+          constP "%" Modulo
         ]
     )
 
@@ -251,8 +254,8 @@ statementP =
                     *> ( expP
                            <|> backticks
                              ( CommandExpression
-                                 <$> stringLiteralP
-                                 <*> many stringLiteralP
+                                 <$> (Val <$> stringNoSpaceP)
+                                 <*> many (expP <|> (Val <$> stringLiteralP)) -- CHECK THIS
                              )
                        )
                 ),
@@ -273,7 +276,9 @@ statementP =
           Until
             <$> (stringP "until" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
-          CommandStatement <$> stringLiteralP <*> many stringLiteralP
+          CommandStatement
+            <$> (Val <$> stringNoSpaceP)
+            <*> many (Val <$> stringLiteralP)
         ]
     )
 
@@ -304,59 +309,75 @@ tParseFiles =
         (Left _) -> assert False
         (Right ast') -> assert (ast == ast')
 
-test_comb =
-  "parsing combinators"
+-- test_comb =
+--   "parsing combinators"
+--     ~: TestList
+--       [ P.parse (wsP P.alpha) "a" ~?= Right 'a',
+--         P.parse (many (wsP P.alpha)) "a b \n   \t c" ~?= Right "abc",
+--         P.parse (stringP "a") "a" ~?= Right (),
+--         P.parse (stringP "a") "b" ~?= Left "No parses",
+--         P.parse (many (stringP "a")) "a  a" ~?= Right [(), ()],
+--         P.parse (constP "&" 'a') "&  " ~?= Right 'a',
+--         P.parse (many (constP "&" 'a')) "&   &" ~?= Right "aa",
+--         P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]" ~?= Right [1, 1, 1]
+--       ]
+
+test_value =
+  "parsing values"
     ~: TestList
-      [ P.parse (wsP P.alpha) "a" ~?= Right 'a',
-        P.parse (many (wsP P.alpha)) "a b \n   \t c" ~?= Right "abc",
-        P.parse (stringP "a") "a" ~?= Right (),
-        P.parse (stringP "a") "b" ~?= Left "No parses",
-        P.parse (many (stringP "a")) "a  a" ~?= Right [(), ()],
-        P.parse (constP "&" 'a') "&  " ~?= Right 'a',
-        P.parse (many (constP "&" 'a')) "&   &" ~?= Right "aa",
-        P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]" ~?= Right [1, 1, 1]
+      [ P.parse (many intValP) "1 2\n 3" ~?= Right [IntVal 1, IntVal 2, IntVal 3],
+        P.parse (many boolValP) "true false\n true" ~?= Right [BoolVal True, BoolVal False, BoolVal True],
+        P.parse stringValP "\"a\"" ~?= Right (StringVal "a"),
+        P.parse stringValP "\"a\\\"\"" ~?= Right (StringVal "a\\"),
+        P.parse stringValP "\"abcd ef\"" ~?= Right (StringVal "abcd ef"),
+        P.parse (many stringValP) "\"a\"   \"b\"" ~?= Right [StringVal "a", StringVal "b"],
+        P.parse (many stringValP) "\" a\"   \"b\"" ~?= Right [StringVal " a", StringVal "b"],
+        P.parse stringNoSpaceP "cd" ~?= Right (StringVal "cd"),
+        P.parse (many stringLiteralP) "cd /bin/ls" ~?= Right [StringVal "cd", StringVal "/bin/ls"]
       ]
 
--- test_value =
---   "parsing values"
---     ~: TestList
---       [ P.parse (many intValP) "1 2\n 3" ~?= Right [IntVal 1, IntVal 2, IntVal 3],
---         P.parse (many boolValP) "true false\n true" ~?= Right [BoolVal True, BoolVal False, BoolVal True],
---         P.parse (many nilValP) "nil nil\n nil" ~?= Right [NilVal, NilVal, NilVal],
---         P.parse stringValP "\"a\"" ~?= Right (StringVal "a"),
---         P.parse stringValP "\"a\\\"\"" ~?= Right (StringVal "a\\"),
---         P.parse (many stringValP) "\"a\"   \"b\"" ~?= Right [StringVal "a", StringVal "b"],
---         P.parse (many stringValP) "\" a\"   \"b\"" ~?= Right [StringVal " a", StringVal "b"]
---       ]
-
--- test_exp =
---   "parsing expressions"
---     ~: TestList
---       [ P.parse (many varP) "x y z" ~?= Right [Name "x", Name "y", Name "z"],
---         P.parse varP "(x.y[1]).z" ~?= Right (Dot (Var (Proj (Var (Dot (Var (Name "x")) "y")) (Val (IntVal 1)))) "z"),
---         P.parse (many nameP) "x sfds _ nil" ~?= Right ["x", "sfds", "_"],
---         P.parse (many uopP) "- - #" ~?= Right [Neg, Neg, Len],
---         P.parse (many bopP) "+ >= .." ~?= Right [Plus, Ge, Concat],
---         P.parse tableConstP "{ x = 2, [3] = false }"
---           ~?= Right (TableConst [FieldName "x" (Val (IntVal 2)), FieldKey (Val (IntVal 3)) (Val (BoolVal False))])
---       ]
+test_exp =
+  "parsing expressions"
+    ~: TestList
+      [ P.parse (many varP) "x y z TEST" ~?= Right [Name "x"],
+        P.parse (many nameP) "TEST " ~?= Right ["TEST"],
+        P.parse (many nameP) "__ " ~?= Right ["__"],
+        P.parse (many nameP) "eee " ~?= Right ["eee"],
+        P.parse (many uopP) "! -z -n" ~?= Right [Not, DashZLen, DashNLen],
+        P.parse (many bopP) "+   -   \\*   //  %" ~?= Right [Plus, Minus, Times, Divide, Modulo],
+        P.parse (many bopP) "== -eq != -ne > -gt >= -ge < -lt <= -le" ~?= Right [Eq, Eq, Neq, Neq, Gt, Gt, Ge, Ge, Lt, Lt, Le, Le],
+        P.parse (many bopP) "-o -a" ~?= Right [DashO, DashA],
+        P.parse (many bopP) "+= += " ~?= Right [Concat, Concat]
+        -- ,
+        -- P.parse () "echo helloworld"
+        --   ~?= Right [CommandExpression (StringVal) ([Expression])]
+      ]
 
 test_stat =
   "parsing statements"
     ~: TestList
-      [ -- P.parse statementP ";" ~?= Right Empty,
-        P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3)))
-        -- ,
-        --   P.parse statementP "if x then y=nil else end"
-        --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
-        --   P.parse statementP "while nil do end"
-        --     ~?= Right (While (Val NilVal) (Block [])),
-        --   P.parse statementP "repeat ; ; until false"
-        --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+      [ P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3)))
+      -- ,
+      --   P.parse statementP "if x then y=nil else end"
+      --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+      --   P.parse statementP "while nil do end"
+      --     ~?= Right (While (Val NilVal) (Block [])),
+      --   P.parse statementP "repeat ; ; until false"
+      --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
       ]
 
 -- >>> runTestTT test_stat
 -- Counts {cases = 1, tried = 1, errors = 0, failures = 0}
 
--- test_all :: IO Counts
--- test_all = runTestTT $ TestList [test_comb, test_value, test_exp, test_stat, tParseFiles]
+test_all :: IO Counts
+test_all = runTestTT $ TestList [test_value, test_exp, test_stat, tParseFiles] -- test_comb
+
+qc :: IO ()
+qc = do
+  putStrLn "roundtrip_val"
+  -- QC.quickCheck prop_roundtrip_val
+  putStrLn "roundtrip_exp"
+  -- QC.quickCheck prop_roundtrip_exp
+  putStrLn "roundtrip_stat"
+
+-- QC.quickCheck prop_roundtrip_stat
