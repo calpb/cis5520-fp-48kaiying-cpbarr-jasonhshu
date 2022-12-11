@@ -38,7 +38,7 @@ data Statement
   | While Expression Block -- while e do s end
   | For Var [Value] Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
-  | Command Expression [Expression]
+  | Command String [String]
   deriving (Eq, Show)
 
 data Expression

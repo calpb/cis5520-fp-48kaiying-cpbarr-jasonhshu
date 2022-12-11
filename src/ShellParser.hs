@@ -1,6 +1,7 @@
 module ShellParser where
 
 import Control.Applicative
+import Data.Char (isSpace)
 import Data.Char qualified as Char
 import Parser (Parser)
 import Parser qualified as P
@@ -8,10 +9,9 @@ import ShellSyntax
 import Test.HUnit (Assertion, Counts, Test (..), assert, runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 
--- Parse For loops (sepby?)
--- Parse Array after for loop (for now, just have them explicitly defined in the for loop)
 -- Handle continue and break (not just in parsing)
 -- Parse between backticks (expect a command and some arguments)
+-- Strings with quotes inside?
 -- Handle semicolons like newline
 
 wsP :: Parser a -> Parser a
@@ -119,6 +119,24 @@ test_stringValP =
 
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
+
+stringNoSpaceP :: Parser String
+stringNoSpaceP =
+  wsP
+    ( (:)
+        <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
+        <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
+    )
+
+-- >>> P.parse stringNoSpaceP "echo 1 2"
+-- Right "echo"
+
+-- >>> P.parse (many stringNoSpaceP) "echo 1 2"
+-- Right ["echo","1","2"]
+
+stringLiteralP :: Parser String
+stringLiteralP =
+  wsP (escQuotes (many (P.satisfy ('\"' /=)))) <|> stringNoSpaceP
 
 -- TODO : fix this part
 -- Figure out operation precedence
@@ -239,12 +257,13 @@ statementP =
             <$> (stringP "while" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
           For
-            <$> (stringP "for" *> varP)
+            <$> (stringP "for" *> wsP varP)
             <*> (stringP "in" *> many stringValP)
             <*> (stringP "do" *> blockP <* stringP "done"),
           Until
             <$> (stringP "until" *> expP)
-            <*> (stringP "do" *> blockP <* stringP "done")
+            <*> (stringP "do" *> blockP <* stringP "done"),
+          Command <$> stringLiteralP <*> many stringLiteralP
         ]
     )
 
