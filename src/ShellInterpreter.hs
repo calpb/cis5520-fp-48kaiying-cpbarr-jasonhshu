@@ -1,3 +1,7 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# HLINT ignore "Use tuple-section" #-}
+
 module ShellInterpreter where
 
 import Commands
@@ -10,12 +14,12 @@ import GHC.Base (undefined)
 import GHC.Real (underflowError)
 import ShellParser
 import ShellSyntax
-import ShellSyntax (Statement (Continue))
 import State (State)
 import State qualified as S
 import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Read (readMaybe)
+import qualified Commands
 
 type Store = Map Name Value
 
@@ -77,7 +81,7 @@ evalE (Op1 o e1) = evalOp1 o <$> evalE e1
 evalE (CommandExpression cmd argsarr) = do
   cmd' <- evalE cmd
   let args' = foldr comb [] argsarr
-  Commands.runCommand cmd' args' -- return the value from runCommand
+  Commands.execCmd cmd' args' -- return the value from runCommand
   where
     comb :: Expression -> [Value] -> [Value]
     comb e acc = do
@@ -185,7 +189,7 @@ evalS (For v arr sb) =
 evalS CommandStatement cmd argsarr = do
   cmd' <- evalE cmd
   let args' = foldr comb [] argsarr
-  ret <- Commands.runCommand cmd' args'
+  ret <- Commands.execCmd cmd' args'
   return ()
   where
     -- case ret of

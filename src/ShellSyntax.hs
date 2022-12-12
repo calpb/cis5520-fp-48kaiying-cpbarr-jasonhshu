@@ -1,3 +1,5 @@
+{-# LANGUAGE ImportQualifiedPost #-}
+
 module ShellSyntax where
 
 import Control.Monad (mapM_)
