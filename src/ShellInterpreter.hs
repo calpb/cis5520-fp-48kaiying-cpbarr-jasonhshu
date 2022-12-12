@@ -1,10 +1,7 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE ImportQualifiedPost #-}
-{-# HLINT ignore "Use tuple-section" #-}
-
 module ShellInterpreter where
 
 import Commands
+import Commands qualified
 import Control.Monad (unless, when)
 import Data.List qualified as List
 import Data.Map (Map, (!?))
@@ -12,14 +9,13 @@ import Data.Map qualified as Map
 import Data.Maybe (Maybe (Nothing), fromMaybe)
 import GHC.Base (undefined)
 import GHC.Real (underflowError)
-import ShellParser qualified as P 
+import ShellParser qualified as P
 import ShellSyntax
 import State (State)
 import State qualified as S
 import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Read (readMaybe)
-import qualified Commands
 
 type Store = Map Name Value
 
@@ -68,26 +64,33 @@ test_env =
 -- >>> runTestTT test_env
 -- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
 
+evaluate :: Expression -> Store -> Value
+evaluate e = S.evalState (evalE e)
+
 -- | Expression evaluator
 evalE :: Expression -> State Store Value
 evalE (Var v) = do
   mr <- envGet v
   case mr of
     Just r -> return r
-    Nothing -> error $ "Variable not found: " ++ show v 
+    Nothing -> error $ "Variable not found: " ++ show v
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
+evalE (Expr e) = evalE e
 evalE (CommandExpression cmd argsarr) = do
+  s <- S.get
   cmd' <- evalE cmd
-  let args' = foldr comb [] argsarr
+  let args' = foldr (comb s) [] argsarr
   let returnString = Commands.execCmd cmd' args' -- return the value from runCommand
-  return (StringVal returnString)
+  -- return (StringVal returnString)
+  return (StringVal "Returning stub comment for now")
   where
-    comb :: Expression -> [Value] -> [Value]
-    comb e acc = do
-      e' <- evalE e
-      e' : acc
+    comb :: Store -> Expression -> [Value] -> [Value]
+    comb s e acc =
+      -- e' <- S.evalState (evalE e) st
+      let e' = evaluate e s
+       in e' : acc
 
 -- | Handle unary operations
 evalOp1 :: Uop -> Value -> Value
@@ -116,9 +119,6 @@ evalOp2 Concat (StringVal s1) (StringVal s2) = StringVal (s1 ++ s2)
 evalOp2 DashO (BoolVal i1) (BoolVal i2) = BoolVal (i1 || i2)
 evalOp2 DashA (BoolVal i1) (BoolVal i2) = BoolVal (i1 && i2)
 evalOp2 _ _ _ = error "Unsupported operation"
-
-evaluate :: Expression -> Store -> Value
-evaluate e = S.evalState (evalE e)
 
 -- | Determine whether a value should be interpreted as true or false when
 -- used as a condition.
@@ -187,15 +187,16 @@ evalS (For (Name v) arr sb) =
       evalS (For (Name v) tl sb)
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
-  let args' = foldr comb [] argsarr
-  let retStr = Commands.execCmd cmd' args' in putStrLn retStr
+  s <- S.get
+  let args' = foldr (comb s) [] argsarr
+  let retStr = Commands.execCmd cmd' args'
+  -- putStrLn retStr
   return ()
   where
-    comb :: Expression -> [Value] -> [Value]
-    comb e acc = do
-      e' <- evalE e
-      e' : acc
-
+    comb :: Store -> Expression -> [Value] -> [Value]
+    comb s e acc =
+      let e' = evaluate e s
+       in e' : acc
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
@@ -385,69 +386,72 @@ stepper = go initialStepper
         Just (":r", _) ->
           let s' = exec (block ss) (store ss)
            in go ss {block = mempty, store = s', history = Just ss}
-        -- -- next statement
-        -- Just (":n", strs) ->
-        --   let numSteps :: Int
-        --       numSteps = case readMaybe (concat strs) of
-        --         Just x -> x
-        --         Nothing -> 1
-        --    in go (getNextSteppers numSteps ss)
-        -- -- previous statement
-        -- Just (":p", strs) -> do
-        --   let numSteps :: Int
-        --       numSteps = case readMaybe (concat strs) of
-        --         Just x -> x
-        --         Nothing -> 1
-        --    in let newSS = getPrevSteppers numSteps ss
-        --        in go newSS {block = block newSS, store = store newSS, history = Just newSS}
-        -- -- evaluate an expression in the current state
-        -- _ -> case P.parseLuExp str of
-        --   Right exp -> do
-        --     let v = evaluate exp (store ss)
-        --     -- putStrLn (pretty v)
-        --       putStrLn "pretty v"
-        --     go ss
-        --   Left _s -> do
-        --     putStrLn "?"
-        --     go ss
+        _ -> undefined
+    -- -- next statement
+    -- Just (":n", strs) ->
+    --   let numSteps :: Int
+    --       numSteps = case readMaybe (concat strs) of
+    --         Just x -> x
+    --         Nothing -> 1
+    --    in go (getNextSteppers numSteps ss)
+    -- -- previous statement
+    -- Just (":p", strs) -> do
+    --   let numSteps :: Int
+    --       numSteps = case readMaybe (concat strs) of
+    --         Just x -> x
+    --         Nothing -> 1
+    --    in let newSS = getPrevSteppers numSteps ss
+    --        in go newSS {block = block newSS, store = store newSS, history = Just newSS}
+    -- -- evaluate an expression in the current state
+    -- _ -> case P.parseLuExp str of
+    --   Right exp -> do
+    --     let v = evaluate exp (store ss)
+    --     -- putStrLn (pretty v)
+    --       putStrLn "pretty v"
+    --     go ss
+    --   Left _s -> do
+    --     putStrLn "?"
+    --     go ss
     prompt :: Stepper -> IO ()
     prompt Stepper {block = Block []} = return ()
     prompt Stepper {block = Block (s : _)} =
       -- putStr "--> " >> putStrLn (pretty s)
-        putStr "--> " >> putStrLn "pretty s"
+      putStr "--> " >> putStrLn "pretty s"
 
+-- type StateT :: Type -> (Type -> Type) -> Type -> Type
+-- newtype StateT s m a = MkStateT {runStateT :: s -> m (a, s)}
 
+-- instance Monad m => Monad (StateT s m) where
+--   return :: a -> StateT s m a
+--   return x = MkStateT $ \s -> return (x, s)
+--   (>>=) :: StateT s m a -> (a -> StateT s m b) -> StateT s m b
+--   p >>= f = MkStateT $ \s -> do
+--     (r, s') <- runStateT p s
+--     runStateT (f r) s'
 
+-- instance Monad m => Applicative (StateT s m) where
+--   pure = return
+--   (<*>) = ap
 
-type StateT :: Type -> (Type -> Type) -> Type -> Type
-newtype StateT s m a =  MkStateT { runStateT :: s -> m (a, s) }
+-- instance Monad m => Functor (StateT s m) where
+--   fmap = liftM
 
-instance Monad m => Monad (StateT s m) where
-   return :: a -> StateT s m a
-   return x = MkStateT $ \s -> return (x,s)
-   (>>=) :: StateT s m a -> (a -> StateT s m b) -> StateT s m b
-   p >>= f = MkStateT $ \s -> do (r,s') <- runStateT p s
-                                 runStateT (f r) s'
-instance Monad m => Applicative (StateT s m) where
-  pure  = return
-  (<*>) = ap
-instance Monad m => Functor (StateT s m) where
-  fmap  = liftM
+-- instance Monad m => MonadState s (StateT s m) where
+--   get :: StateT s m s
+--   get = MkStateT getIt
+--     where
+--       getIt :: s -> m (s, s)
 
-instance Monad m => MonadState s (StateT s m) where
-   get :: StateT s m s
-   get = MkStateT getIt
-     where getIt :: s -> m (s, s)
-           
-           getIt s = return (s, s)
-           
-   put :: s -> StateT s m ()
-   put s = MkStateT putIt
-     where putIt :: s -> m ((), s)
-           
-           -- _s1 is the old state. we want to throw it away and replace it
-           -- with the new state s
-           putIt _s1 = return ((), s)
+--       getIt s = return (s, s)
+
+--   put :: s -> StateT s m ()
+--   put s = MkStateT putIt
+--     where
+--       putIt :: s -> m ((), s)
+
+--       -- _s1 is the old state. we want to throw it away and replace it
+--       -- with the new state s
+--       putIt _s1 = return ((), s)
 
 -- -------------------------- all properties and tests in this module  -----------------------------
 

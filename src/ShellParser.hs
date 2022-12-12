@@ -336,6 +336,11 @@ test_value =
         P.parse (many stringLiteralP) "cd /bin/ls" ~?= Right [StringVal "cd", StringVal "/bin/ls"]
       ]
 
+-- >>> runTestTT test_exp
+-- Counts {cases = 10, tried = 10, errors = 0, failures = 1}
+-- >>> P.parse (many expP) "`$a+5`"
+-- Right [Op2 (Var "a") Plus (Val (IntVal 5))]
+
 test_exp =
   "parsing expressions"
     ~: TestList
@@ -347,7 +352,8 @@ test_exp =
         P.parse (many bopP) "+   -   \\*   //  %" ~?= Right [Plus, Minus, Times, Divide, Modulo],
         P.parse (many bopP) "== -eq != -ne > -gt >= -ge < -lt <= -le" ~?= Right [Eq, Eq, Neq, Neq, Gt, Gt, Ge, Ge, Lt, Lt, Le, Le],
         P.parse (many bopP) "-o -a" ~?= Right [DashO, DashA],
-        P.parse (many bopP) "+= += " ~?= Right [Concat, Concat]
+        P.parse (many bopP) "+= += " ~?= Right [Concat, Concat],
+        P.parse (many expP) "`$a+5`" ~?= Right [Op2 (Var "a") Plus (Val (IntVal 5))]
         -- ,
         -- P.parse () "echo helloworld"
         --   ~?= Right [CommandExpression (StringVal) ([Expression])]
