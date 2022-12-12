@@ -5,6 +5,7 @@ import Data.Char qualified as Char
 import Parser (Parser)
 import Parser qualified as P
 import ShellSyntax
+import ShellSyntax (Statement (CommandStatement))
 import Test.HUnit (Assertion, Counts, Test (..), assert, runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 
@@ -362,14 +363,19 @@ test_exp =
 test_stat =
   "parsing statements"
     ~: TestList
-      [ P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3)))
-      -- ,
-      --   P.parse statementP "if x then y=nil else end"
-      --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
-      --   P.parse statementP "while nil do end"
-      --     ~?= Right (While (Val NilVal) (Block [])),
-      --   P.parse statementP "repeat ; ; until false"
-      --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+      [ P.parse statementP "VAR=3" ~?= Right (Assign (Name "VAR") (Val (IntVal 3))),
+        P.parse statementP "echo \"hello $a\""
+          ~?= Right
+            ( CommandStatement
+                (Val $ StringVal "echo")
+                [Val (StringVal "hello "), Var "a"]
+            )
+            --   P.parse statementP "if x then y=nil else end"
+            --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+            --   P.parse statementP "while nil do end"
+            --     ~?= Right (While (Val NilVal) (Block [])),
+            --   P.parse statementP "repeat ; ; until false"
+            --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
       ]
 
 -- >>> runTestTT test_stat

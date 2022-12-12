@@ -6,7 +6,7 @@ import Control.Monad (unless, when)
 import Data.List qualified as List
 import Data.Map (Map, (!?))
 import Data.Map qualified as Map
-import Data.Maybe (Maybe (Nothing), fromMaybe)
+import Data.Maybe (Maybe (Just, Nothing), fromMaybe)
 import GHC.Base (undefined)
 import GHC.Real (underflowError)
 import ShellParser qualified as P
@@ -91,8 +91,10 @@ evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
 
 -- | Expression evaluator
-evalE :: MonadState Store m => (String -> [String] -> m String) -> Expression -> Store Value
-evalE execCommand (Var v) = do
+-- evalE :: MonadState Store m => (String -> [String] -> m String) -> Expression -> Store Value
+-- evalE execCommand (Var v) = do
+evalE :: Expression -> State Store Value
+evalE (Var v) = do
   -- wait until we need value of var to evaluate stored command
   mr <- envGet v
   case mr of
@@ -263,17 +265,17 @@ exec = S.execState . eval
 --   (b', s') -> True
 
 -- | Evaluate this block for a specified number of steps
-boundedStep :: Int -> Block -> State Store Block
-boundedStep i b =
-  if i > 0
-    then do
-      b' <- step b
-      boundedStep (i - 1) b'
-    else pure b
+-- boundedStep :: Int -> Block -> State Store Block
+-- boundedStep i b =
+--   if i > 0
+--     then do
+--       b' <- step b
+--       boundedStep (i - 1) b'
+--     else pure b
 
 -- | Evaluate this block for a specified nuimber of steps, using the specified store
-steps :: Int -> Block -> Store -> (Block, Store)
-steps n block = S.runState (boundedStep n block)
+-- steps :: Int -> Block -> Store -> (Block, Store)
+-- steps n block = S.runState (boundedStep n block)
 
 -- -- | Is this block completely evaluated?
 -- final :: Block -> Bool
@@ -378,16 +380,16 @@ initialStepper =
     }
 
 -- | Retreives a past stepper based on our number of steps
-getPrevSteppers :: Int -> Stepper -> Stepper
-getPrevSteppers 0 s = s
-getPrevSteppers i s = case history s of
-  Just s' -> getPrevSteppers (i - 1) s'
-  Nothing -> s
+-- getPrevSteppers :: Int -> Stepper -> Stepper
+-- getPrevSteppers 0 s = s
+-- getPrevSteppers i s = case history s of
+--   Just s' -> getPrevSteppers (i - 1) s'
+--   Nothing -> s
 
 -- | Step through given steps at the same time
-getNextSteppers :: Int -> Stepper -> Stepper
-getNextSteppers 0 s = s
-getNextSteppers i s = let (blk, s') = steps 1 (block s) (store s) in getNextSteppers (i - 1) s {block = blk, store = s', history = Just s}
+-- getNextSteppers :: Int -> Stepper -> Stepper
+-- getNextSteppers 0 s = s
+-- getNextSteppers i s = let (blk, s') = steps 1 (block s) (store s) in getNextSteppers (i - 1) s {block = blk, store = s', history = Just s}
 
 -- Step across our Lu file and evaluate statement by statement
 stepper :: IO ()
@@ -401,7 +403,11 @@ stepper = go initialStepper
       case List.uncons (words str) of
         -- load a file for stepping
         Just (":l", [fn]) -> do
+          -- putStr "loading file"
           result <- P.parseLuFile fn
+          putStrLn "Printing parse output ---------"
+          putStrLn (show result)
+          putStrLn "End of parse output ----------"
           case result of
             Right x -> go ss {filename = Just fn, block = x, store = initialStore, history = Just ss}
             Left y -> do
@@ -409,7 +415,7 @@ stepper = go initialStepper
               go ss
         -- dump the store
         Just (":d", _) -> do
-          -- putStrLn (pretty (store ss))
+          putStrLn (show (globalEnvTable (store ss)))
           go ss
         -- quit the stepper
         Just (":q", _) -> return ()
@@ -417,6 +423,9 @@ stepper = go initialStepper
         Just (":r", _) ->
           let s' = exec (block ss) (store ss)
            in go ss {block = mempty, store = s', history = Just ss}
+        Just (":pq", _) -> do
+          printpq $ printQ (store ss)
+          go ss
         _ -> undefined
     -- -- next statement
     -- Just (":n", strs) ->
@@ -447,7 +456,13 @@ stepper = go initialStepper
     prompt Stepper {block = Block []} = return ()
     prompt Stepper {block = Block (s : _)} =
       -- putStr "--> " >> putStrLn (pretty s)
-      putStr "--> " >> putStrLn "pretty s"
+      putStr "--> " >> putStrLn (show s)
+    printpq :: [IO String] -> IO ()
+    printpq [] = putStrLn "End of Print Queue"
+    printpq (x : tl) = do
+      str <- x
+      putStrLn str
+      printpq tl
 
 -- type StateT :: Type -> (Type -> Type) -> Type -> Type
 -- newtype StateT s m a = MkStateT {runStateT :: s -> m (a, s)}
