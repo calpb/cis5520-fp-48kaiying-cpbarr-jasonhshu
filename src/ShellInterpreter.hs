@@ -12,7 +12,7 @@ import Data.Map qualified as Map
 import Data.Maybe (Maybe (Nothing), fromMaybe)
 import GHC.Base (undefined)
 import GHC.Real (underflowError)
-import ShellParser
+import ShellParser qualified as P 
 import ShellSyntax
 import State (State)
 import State qualified as S
@@ -74,14 +74,15 @@ evalE (Var v) = do
   mr <- envGet v
   case mr of
     Just r -> return r
-    Nothing -> return $ StringVal "yooooooo thats not allowed " -- todo: THROW ERROR FOUND UNDEFINED VARIABLE, could use either monad
+    Nothing -> error $ "Variable not found: " ++ show v 
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
 evalE (CommandExpression cmd argsarr) = do
   cmd' <- evalE cmd
   let args' = foldr comb [] argsarr
-  Commands.execCmd cmd' args' -- return the value from runCommand
+  let returnString = Commands.execCmd cmd' args' -- return the value from runCommand
+  return (StringVal returnString)
   where
     comb :: Expression -> [Value] -> [Value]
     comb e acc = do
@@ -102,7 +103,7 @@ evalOp2 :: Bop -> Value -> Value -> Value
 evalOp2 Plus (IntVal i1) (IntVal i2) = IntVal (i1 + i2)
 evalOp2 Minus (IntVal i1) (IntVal i2) = IntVal (i1 - i2)
 evalOp2 Times (IntVal i1) (IntVal i2) = IntVal (i1 * i2)
-evalOp2 Divide (IntVal _) (IntVal 0) = undefined -- todo: throw error
+evalOp2 Divide (IntVal _) (IntVal 0) = error "Divide by zero error"
 evalOp2 Divide (IntVal i1) (IntVal i2) = IntVal (i1 `div` i2)
 evalOp2 Modulo (IntVal i1) (IntVal i2) = IntVal (i1 `mod` i2)
 evalOp2 Eq (IntVal i1) (IntVal i2) = BoolVal (i1 == i2)
@@ -114,7 +115,7 @@ evalOp2 Le (IntVal i1) (IntVal i2) = BoolVal (i1 <= i2)
 evalOp2 Concat (StringVal s1) (StringVal s2) = StringVal (s1 ++ s2)
 evalOp2 DashO (BoolVal i1) (BoolVal i2) = BoolVal (i1 || i2)
 evalOp2 DashA (BoolVal i1) (BoolVal i2) = BoolVal (i1 && i2)
-evalOp2 _ _ _ = undefined -- todo: throw error
+evalOp2 _ _ _ = error "Unsupported operation"
 
 evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
@@ -134,9 +135,7 @@ test_evaluateUop =
         evaluate (Op1 DashZLen (Val (StringVal ""))) initialStore ~?= BoolVal True,
         evaluate (Op1 DashZLen (Val (StringVal "txt"))) initialStore ~?= BoolVal False,
         evaluate (Op1 DashNLen (Val (StringVal ""))) initialStore ~?= BoolVal False,
-        evaluate (Op1 DashNLen (Val (StringVal "txt"))) initialStore ~?= BoolVal True,
-        evaluate (Op1 Str (Val (StringVal "yeehaw"))) initialStore ~?= IntVal 6,
-        evaluate (Op1 Str (Val (StringVal ""))) initialStore ~?= IntVal 0
+        evaluate (Op1 DashNLen (Val (StringVal "txt"))) initialStore ~?= BoolVal True
       ]
 
 -- >>> runTestTT test_evaluateUop
@@ -155,7 +154,7 @@ eval (Block ss) = mapM_ evalS ss
 
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
-evalS (Assign v e) = do
+evalS (Assign (Name v) e) = do
   e' <- evalE e
   envUpdate v e'
 evalS (If e sb) = do
@@ -164,42 +163,39 @@ evalS (If e sb) = do
 evalS (IfElse e sb1 sb2) = do
   e' <- evalE e
   if toBool e' then eval sb1 else eval sb2
-evalS Continue = return -- think
-evalS Break = return -- think
+evalS Continue = return () -- think
+evalS Break = return () -- think
 evalS s@(While e sb) = do
   e' <- evalE e
   if toBool e'
     then eval sb >> evalS s
-    else return
+    else return ()
 evalS s@(Until e sb) = do
   eval sb
   e' <- evalE e
   if not (toBool e')
     then evalS s
-    else return -- stop once expression is true
-evalS (For v arr sb) =
+    else return () -- stop once expression is true
+evalS (For (Name v) arr sb) =
   case arr of
-    [] -> return
+    [] -> return ()
     x : tl -> do
       prevTable <- S.get -- add loop var in state
       envUpdate v x
       eval sb
       S.put prevTable -- restore state
-      evalS (For v tl sb)
-evalS CommandStatement cmd argsarr = do
+      evalS (For (Name v) tl sb)
+evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
   let args' = foldr comb [] argsarr
-  ret <- Commands.execCmd cmd' args'
+  let retStr = Commands.execCmd cmd' args' in putStrLn retStr
   return ()
   where
-    -- case ret of
-    --   Right x -> return x
-    --   Left x  -> putStrLn x
-
     comb :: Expression -> [Value] -> [Value]
     comb e acc = do
       e' <- evalE e
       e' : acc
+
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
@@ -210,21 +206,42 @@ exec = S.execState . eval
 -- test_exec :: Test
 -- test_exec = TestList [tExecTest, tExecFact, tExecAbs, tExecTimes, tExecTable, tExecBfs]
 
+-- -- | Evaluate a single statement and return the rest of the block
 -- step :: Block -> State Store Block
--- step _ = undefined
+-- step (Block []) = pure $ Block []
+-- step (Block (x : xs)) =
+--   case x of
+--     If x1 b1 b2 -> do
+--       s <- evalE x1
+--       if toBool s then return $ b1 <> Block xs else return $ b2 <> Block xs
+--     w@(While x1 b) -> do
+--       s <- evalE x1
+--       if toBool s
+--         then return $ b <> Block (x : xs)
+--         else return $ Block xs
+--     -- r@(Repeat b x1) -> do
+--     --   return $ b <> Block [If x1 (Block xs) (Block (x : xs))]
+--     _ -> do
+--       evalS x
+--       return $ Block xs
 
 -- -- | Make sure that we can step every block in every store
 -- prop_step_total :: Block -> Store -> Bool
 -- prop_step_total b s = case S.runState (step b) s of
 --   (b', s') -> True
 
--- -- | Evaluate this block for a specified number of steps
--- boundedStep :: Int -> Block -> State Store Block
--- boundedStep = undefined
+-- | Evaluate this block for a specified number of steps
+boundedStep :: Int -> Block -> State Store Block
+boundedStep i b =
+  if i > 0
+    then do
+      b' <- step b
+      boundedStep (i - 1) b'
+    else pure b
 
--- -- | Evaluate this block for a specified nuimber of steps, using the specified store
--- steps :: Int -> Block -> Store -> (Block, Store)
--- steps n block = S.runState (boundedStep n block)
+-- | Evaluate this block for a specified nuimber of steps, using the specified store
+steps :: Int -> Block -> Store -> (Block, Store)
+steps n block = S.runState (boundedStep n block)
 
 -- -- | Is this block completely evaluated?
 -- final :: Block -> Bool
@@ -312,72 +329,125 @@ exec = S.execState . eval
 -- test_execStep :: Test
 -- test_execStep = TestList [tExecStepFact, tExecStepAbs, tExecStepTimes, tExecStepAbs, tExecStepTable, tExecStepBfs]
 
--- data Stepper = Stepper
---   { filename :: Maybe String,
---     block :: Block,
---     store :: Store,
---     history :: Maybe Stepper
---   }
+data Stepper = Stepper
+  { filename :: Maybe String,
+    block :: Block,
+    store :: Store,
+    history :: Maybe Stepper
+  }
 
--- initialStepper :: Stepper
--- initialStepper =
---   Stepper
---     { filename = Nothing,
---       block = mempty,
---       store = initialStore,
---       history = Nothing
---     }
+initialStepper :: Stepper
+initialStepper =
+  Stepper
+    { filename = Nothing,
+      block = mempty,
+      store = initialStore,
+      history = Nothing
+    }
 
--- -- Fill in `undefined` below
--- stepper :: IO ()
--- stepper = go initialStepper
---   where
---     go :: Stepper -> IO ()
---     go ss = do
---       prompt ss
---       putStr (fromMaybe "Lu" (filename ss) ++ "> ")
---       str <- getLine
---       case List.uncons (words str) of
---         -- load a file for stepping
---         Just (":l", [fn]) -> do
---           undefined
---         -- dump the store
---         Just (":d", _) -> do
---           putStrLn (pretty (store ss))
---           go ss
---         -- quit the stepper
---         Just (":q", _) -> return ()
---         -- run current block to completion, use this to run the file
---         Just (":r", _) ->
---           let s' = exec (block ss) (store ss)
---            in go ss {block = mempty, store = s', history = Just ss}
---         -- next statement
---         Just (":n", strs) -> do
---           let numSteps :: Int
---               numSteps = case readMaybe (concat strs) of
---                 Just x -> x
---                 Nothing -> 1
---           undefined
---         -- previous statement
---         Just (":p", strs) -> do
---           let numSteps :: Int
---               numSteps = case readMaybe (concat strs) of
---                 Just x -> x
---                 Nothing -> 1
---           undefined
---         -- evaluate an expression in the current state
---         _ -> case LuParser.parseLuExp str of
---           Right exp -> do
---             let v = evaluate exp (store ss)
---             putStrLn (pretty v)
---             go ss
---           Left _s -> do
---             putStrLn "?"
---             go ss
---     prompt :: Stepper -> IO ()
---     prompt Stepper {block = Block []} = return ()
---     prompt Stepper {block = Block (s : _)} =
---       putStr "--> " >> putStrLn (pretty s)
+-- | Retreives a past stepper based on our number of steps
+getPrevSteppers :: Int -> Stepper -> Stepper
+getPrevSteppers 0 s = s
+getPrevSteppers i s = case history s of
+  Just s' -> getPrevSteppers (i - 1) s'
+  Nothing -> s
+
+-- | Step through given steps at the same time
+getNextSteppers :: Int -> Stepper -> Stepper
+getNextSteppers 0 s = s
+getNextSteppers i s = let (blk, s') = steps 1 (block s) (store s) in getNextSteppers (i - 1) s {block = blk, store = s', history = Just s}
+
+-- Step across our Lu file and evaluate statement by statement
+stepper :: IO ()
+stepper = go initialStepper
+  where
+    go :: Stepper -> IO ()
+    go ss = do
+      prompt ss
+      putStr (fromMaybe "sh" (filename ss) ++ "> ")
+      str <- getLine
+      case List.uncons (words str) of
+        -- load a file for stepping
+        Just (":l", [fn]) -> do
+          result <- P.parseLuFile fn
+          case result of
+            Right x -> go ss {filename = Just fn, block = x, store = initialStore, history = Just ss}
+            Left y -> do
+              putStrLn y
+              go ss
+        -- dump the store
+        Just (":d", _) -> do
+          -- putStrLn (pretty (store ss))
+          go ss
+        -- quit the stepper
+        Just (":q", _) -> return ()
+        -- run current block to completion
+        Just (":r", _) ->
+          let s' = exec (block ss) (store ss)
+           in go ss {block = mempty, store = s', history = Just ss}
+        -- -- next statement
+        -- Just (":n", strs) ->
+        --   let numSteps :: Int
+        --       numSteps = case readMaybe (concat strs) of
+        --         Just x -> x
+        --         Nothing -> 1
+        --    in go (getNextSteppers numSteps ss)
+        -- -- previous statement
+        -- Just (":p", strs) -> do
+        --   let numSteps :: Int
+        --       numSteps = case readMaybe (concat strs) of
+        --         Just x -> x
+        --         Nothing -> 1
+        --    in let newSS = getPrevSteppers numSteps ss
+        --        in go newSS {block = block newSS, store = store newSS, history = Just newSS}
+        -- -- evaluate an expression in the current state
+        -- _ -> case P.parseLuExp str of
+        --   Right exp -> do
+        --     let v = evaluate exp (store ss)
+        --     -- putStrLn (pretty v)
+        --       putStrLn "pretty v"
+        --     go ss
+        --   Left _s -> do
+        --     putStrLn "?"
+        --     go ss
+    prompt :: Stepper -> IO ()
+    prompt Stepper {block = Block []} = return ()
+    prompt Stepper {block = Block (s : _)} =
+      -- putStr "--> " >> putStrLn (pretty s)
+        putStr "--> " >> putStrLn "pretty s"
+
+
+
+
+type StateT :: Type -> (Type -> Type) -> Type -> Type
+newtype StateT s m a =  MkStateT { runStateT :: s -> m (a, s) }
+
+instance Monad m => Monad (StateT s m) where
+   return :: a -> StateT s m a
+   return x = MkStateT $ \s -> return (x,s)
+   (>>=) :: StateT s m a -> (a -> StateT s m b) -> StateT s m b
+   p >>= f = MkStateT $ \s -> do (r,s') <- runStateT p s
+                                 runStateT (f r) s'
+instance Monad m => Applicative (StateT s m) where
+  pure  = return
+  (<*>) = ap
+instance Monad m => Functor (StateT s m) where
+  fmap  = liftM
+
+instance Monad m => MonadState s (StateT s m) where
+   get :: StateT s m s
+   get = MkStateT getIt
+     where getIt :: s -> m (s, s)
+           
+           getIt s = return (s, s)
+           
+   put :: s -> StateT s m ()
+   put s = MkStateT putIt
+     where putIt :: s -> m ((), s)
+           
+           -- _s1 is the old state. we want to throw it away and replace it
+           -- with the new state s
+           putIt _s1 = return ((), s)
 
 -- -------------------------- all properties and tests in this module  -----------------------------
 

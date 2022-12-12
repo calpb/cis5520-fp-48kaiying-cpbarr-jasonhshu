@@ -6,7 +6,6 @@ import ShellSyntax
 import System.IO
 import System.Process
 import System.Directory
-import System.Directory.Internal.Prelude (exitFailure)
 import Control.Exception
 
 data MyException
@@ -56,13 +55,6 @@ execCmd' command args = do
 --       ErrRuntimeErr x ->
 --         hPutStrLn stderr x
 --    )
-
-date :: IO ()
-date = do 
-  (_, Just hout, _, _) <- createProcess (proc "date" []){ std_out = CreatePipe }
-  dateOut <- hGetContents hout
-  putStrLn "> date"
-  putStrLn dateOut
 
 
 
