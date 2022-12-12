@@ -17,48 +17,71 @@ import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Read (readMaybe)
 
-type Store = Map Name Value
+-- TODO make command assignment lazy
+-- Get end-to-end testing working first, then use monad transformers
+
+data GlobalEnvValue
+  = Gvalue Value
+  | Gexpression Expression
+  deriving (Eq, Show)
+
+data ShellStore = ShellStore
+  { globalEnvTable :: Map Name GlobalEnvValue,
+    printQ :: [IO String]
+  }
+
+type Store = ShellStore
+
+-- type Store = Map Name Value
 
 initialStore :: Store
-initialStore = Map.empty
+initialStore =
+  ShellStore
+    { globalEnvTable = Map.empty,
+      printQ = []
+    }
 
 extendedStore :: Store
 extendedStore =
-  Map.fromList
-    [ ("x", IntVal 1),
-      ("y", StringVal "mystring"),
-      ("z", BoolVal True)
-    ]
+  ShellStore
+    { globalEnvTable =
+        Map.fromList
+          [ ("x", Gvalue (IntVal 1)),
+            ("y", Gvalue (StringVal "mystring")),
+            ("z", Gvalue (BoolVal True))
+          ],
+      printQ = []
+    }
 
 -- | Get the value for a Env name
-envGet :: Name -> State Store (Maybe Value)
+envGet :: Name -> State Store (Maybe GlobalEnvValue)
 envGet n = do
-  table <- S.get
-  case Map.lookup n table of
+  ss <- S.get
+  case Map.lookup n (globalEnvTable ss) of
     Just x -> return $ Just x
     Nothing -> return Nothing
 
 -- | For some name update the value in the Env table
 -- | If name doesn't exist, insert new
-envUpdate :: Name -> Value -> State Store ()
+envUpdate :: Name -> GlobalEnvValue -> State Store ()
 envUpdate n v = do
-  table <- S.get
-  S.put (Map.insert n v table)
+  ss <- S.get
+  S.put (ss {globalEnvTable = Map.insert n v (globalEnvTable ss)})
 
 test_env :: Test
 test_env =
   "index tests"
     ~: TestList
-      [ S.evalState (envGet "x") extendedStore ~?= Just (IntVal 1),
-        S.evalState (envGet "y") extendedStore ~?= Just (StringVal "mystring"),
-        S.evalState (envGet "z") extendedStore ~?= Just (BoolVal True),
+      [ S.evalState (envGet "x") extendedStore ~?= Just (Gvalue $ IntVal 1),
+        S.evalState (envGet "y") extendedStore ~?= Just (Gvalue $ StringVal "mystring"),
+        S.evalState (envGet "z") extendedStore ~?= Just (Gvalue $ BoolVal True),
         S.evalState (envGet "yeehaw") extendedStore ~?= Nothing,
         -- Add new value to table
-        S.evalState (envUpdate "k" (IntVal 20) >> envGet "k") extendedStore ~?= Just (IntVal 20),
+        S.evalState (envUpdate "k" (Gvalue $ IntVal 20) >> envGet "k") extendedStore ~?= Just (Gvalue $ IntVal 20),
         -- Update exisiting value in env table
-        S.evalState (envUpdate "z" (BoolVal False) >> envGet "z") extendedStore ~?= Just (BoolVal False),
+        S.evalState (envUpdate "z" (Gvalue $ BoolVal False) >> envGet "z") extendedStore ~?= Just (Gvalue $ BoolVal False),
         -- Consecutive update test
-        S.evalState (envUpdate "x" (IntVal 100) >> envUpdate "x" (IntVal 200) >> envGet "x") extendedStore ~?= Just (IntVal 200)
+        S.evalState (envUpdate "x" (Gvalue $ IntVal 100) >> envUpdate "x" (Gvalue $ IntVal 200) >> envGet "x") extendedStore ~?= Just (Gvalue $ IntVal 200)
       ]
 
 -- >>> runTestTT test_env
@@ -68,23 +91,26 @@ evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
 
 -- | Expression evaluator
-evalE :: Expression -> State Store Value
-evalE (Var v) = do
+evalE :: MonadState Store m => (String -> [String] -> m String) -> Expression -> Store Value
+evalE execCommand (Var v) = do
+  -- wait until we need value of var to evaluate stored command
   mr <- envGet v
   case mr of
-    Just r -> return r
+    Just (Gexpression e) -> evalE e
+    Just (Gvalue v') -> return v'
     Nothing -> error $ "Variable not found: " ++ show v
 evalE (Val v) = return v
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
 evalE (Expr e) = evalE e
 evalE (CommandExpression cmd argsarr) = do
-  s <- S.get
+  ss <- S.get
   cmd' <- evalE cmd
-  let args' = foldr (comb s) [] argsarr
+  let args' = foldr (comb ss) [] argsarr
   let returnString = Commands.execCmd cmd' args' -- return the value from runCommand
+  -- Put the return string in the queue?
   -- return (StringVal returnString)
-  return (StringVal "Returning stub comment for now")
+  return $ StringVal "Stub String"
   where
     comb :: Store -> Expression -> [Value] -> [Value]
     comb s e acc =
@@ -99,7 +125,7 @@ evalOp1 DashZLen (StringVal []) = BoolVal True
 evalOp1 DashZLen (StringVal _) = BoolVal False
 evalOp1 DashNLen (StringVal []) = BoolVal False
 evalOp1 DashNLen (StringVal _) = BoolVal True
-evalOp1 _ _ = undefined -- other operations are not defined, todo: throw error
+evalOp1 _ _ = error "Unsupported unary operation" -- other operations are not defined, todo: throw error
 
 -- | Handle binary operations
 evalOp2 :: Bop -> Value -> Value -> Value
@@ -154,9 +180,13 @@ eval (Block ss) = mapM_ evalS ss
 
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
-evalS (Assign (Name v) e) = do
-  e' <- evalE e
-  envUpdate v e'
+evalS (Assign (Name v) e) =
+  case e of
+    cmdexpr@(CommandExpression _ _) ->
+      envUpdate v (Gexpression cmdexpr)
+    noncmdexpr -> do
+      e' <- evalE noncmdexpr
+      envUpdate v (Gvalue e')
 evalS (If e sb) = do
   e' <- evalE e
   when (toBool e') $ eval sb
@@ -181,16 +211,17 @@ evalS (For (Name v) arr sb) =
     [] -> return ()
     x : tl -> do
       prevTable <- S.get -- add loop var in state
-      envUpdate v x
+      envUpdate v (Gvalue x)
       eval sb
       S.put prevTable -- restore state
       evalS (For (Name v) tl sb)
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
-  s <- S.get
-  let args' = foldr (comb s) [] argsarr
+  ss <- S.get
+  let args' = foldr (comb ss) [] argsarr
   let retStr = Commands.execCmd cmd' args'
   -- putStrLn retStr
+  S.put (ss {printQ = printQ ss ++ [retStr]})
   return ()
   where
     comb :: Store -> Expression -> [Value] -> [Value]
