@@ -1,6 +1,4 @@
-#!/bin/sh
+a=50
+b=40
 
-echo "hello world!"
-
-# Answer is
-# hello world!
+echo "hello $a $b!"
