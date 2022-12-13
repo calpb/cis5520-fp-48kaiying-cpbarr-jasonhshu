@@ -98,7 +98,10 @@ evalE (Var v) = do
   -- wait until we need value of var to evaluate stored command
   mr <- envGet v
   case mr of
-    Just (Gexpression e) -> evalE e
+    Just (Gexpression e) -> do
+      e' <- evalE e
+      envUpdate v (Gvalue e')
+      return e' -- TODO check updating variable
     Just (Gvalue v') -> return v'
     Nothing -> error $ "Variable not found: " ++ show v
 evalE (Val v) = return v
@@ -437,8 +440,8 @@ stepper = go initialStepper
           printpq $ printQ (store ss)
           go ss
         _ -> do
-        putStrLn "?"
-        go ss
+          putStrLn "?"
+          go ss
     -- -- next statement
     -- Just (":n", strs) ->
     --   let numSteps :: Int
