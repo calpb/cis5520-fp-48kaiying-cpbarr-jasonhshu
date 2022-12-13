@@ -2,10 +2,10 @@ module ShellParser where
 
 import Control.Applicative
 import Data.Char qualified as Char
+import Data.List (isInfixOf)
 import Parser (Parser)
 import Parser qualified as P
 import ShellSyntax
-import ShellSyntax (Statement (CommandStatement))
 import Test.HUnit (Assertion, Counts, Test (..), assert, runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 
@@ -103,11 +103,13 @@ boolValP = constP "true" (BoolVal True) <|> constP "false" (BoolVal False)
 escQuotes :: Parser a -> Parser a
 escQuotes x = P.between (P.string "\"") x (P.string "\"")
 
+-- String values cannot contain $ in this implementation -- $ marks sub
 stringValP :: Parser Value
 stringValP =
   StringVal
-    <$> wsP (escQuotes (many (P.satisfy ('\"' /=))))
+    <$> wsP (P.filter (not . isInfixOf "$") (escQuotes (many (P.satisfy (/= '\"')))))
 
+-- >>> P.parse stringValP "\"$a \""
 test_stringValP :: Test
 test_stringValP =
   TestList
@@ -120,13 +122,25 @@ test_stringValP =
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
-stringNoSpaceP :: Parser Value
-stringNoSpaceP =
+stringNoSubP :: Parser Value
+stringNoSubP =
   StringVal
     <$> wsP
       ( (:)
-          <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
-          <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
+          <$> P.satisfy (\c -> c /= '$' && c /= '\"')
+          <*> many (P.satisfy (\c -> c /= '$' && c /= '\"'))
+      )
+
+stringNoSubSpaceP :: Parser Value
+stringNoSubSpaceP =
+  StringVal
+    <$> wsP
+      ( P.filter
+          (not . isInfixOf "$")
+          ( (:)
+              <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
+              <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
+          )
       )
 
 -- >>> P.parse stringNoSpaceP "echo 1 2"
@@ -135,8 +149,24 @@ stringNoSpaceP =
 -- >>> P.parse (many stringNoSpaceP) "echo 1 2"
 -- Right ["echo","1","2"]
 
-stringLiteralP :: Parser Value
-stringLiteralP = stringValP <|> stringNoSpaceP
+stringSubP :: Parser Expression
+stringSubP =
+  StringSub
+    <$> wsP
+      ( escQuotes
+          ( (:)
+              <$> ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringNoSubP))
+              <*> many ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringNoSubP))
+          )
+      )
+
+-- >>> P.parse (many stringSubP) "\"$a is neq to $b \" \" $a is eq to $a.\""
+-- Right [StringSub [Var "a",Val (StringVal " is neq to "),Var "b",Val (StringVal " ")],StringSub [Val (StringVal " "),Var "a",Val (StringVal " is eq to "),Var "a",Val (StringVal ".")]]
+
+commandStringP :: Parser Expression
+commandStringP = (Val <$> stringNoSubSpaceP) <|> (Var <$> (P.char '$' *> nameP)) <|> stringSubP
+
+-- >>> P.parse commandStringP "command \"$a1 neq $b2.\" $c something"
 
 -- TODO : fix this part
 -- Figure out operation precedence
@@ -156,6 +186,7 @@ expP = compP
         <|> backticks expP -- ``
         <|> brackets expP -- []
         <|> Val <$> valueP
+        <|> stringSubP
 
 varP :: Parser Var
 varP = Name <$> nameP
@@ -255,8 +286,8 @@ statementP =
                     *> ( expP
                            <|> backticks
                              ( CommandExpression
-                                 <$> (Val <$> stringNoSpaceP)
-                                 <*> many (expP <|> (Val <$> stringLiteralP)) -- CHECK THIS
+                                 <$> (Val <$> stringNoSubSpaceP)
+                                 <*> many (expP <|> commandStringP) -- CHECK THIS
                              )
                        )
                 ),
@@ -278,8 +309,8 @@ statementP =
             <$> (stringP "until" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
           CommandStatement
-            <$> (Val <$> stringNoSpaceP)
-            <*> many (Val <$> stringLiteralP)
+            <$> (Val <$> stringNoSubSpaceP)
+            <*> many commandStringP
         ]
     )
 
@@ -333,12 +364,15 @@ test_value =
         P.parse stringValP "\"abcd ef\"" ~?= Right (StringVal "abcd ef"),
         P.parse (many stringValP) "\"a\"   \"b\"" ~?= Right [StringVal "a", StringVal "b"],
         P.parse (many stringValP) "\" a\"   \"b\"" ~?= Right [StringVal " a", StringVal "b"],
-        P.parse stringNoSpaceP "cd" ~?= Right (StringVal "cd"),
-        P.parse (many stringLiteralP) "cd /bin/ls" ~?= Right [StringVal "cd", StringVal "/bin/ls"]
+        P.parse stringNoSubSpaceP "cd" ~?= Right (StringVal "cd"),
+        P.parse (many commandStringP) "cd /bin/ls" ~?= Right [Val (StringVal "cd"), Val (StringVal "/bin/ls")]
       ]
 
+-- >>> runTestTT test_value
+-- Counts {cases = 9, tried = 9, errors = 0, failures = 0}
+
 -- >>> runTestTT test_exp
--- Counts {cases = 10, tried = 10, errors = 0, failures = 1}
+-- Counts {cases = 10, tried = 10, errors = 0, failures = 0}
 -- >>> P.parse (many expP) "`$a+5`"
 -- Right [Op2 (Var "a") Plus (Val (IntVal 5))]
 
@@ -368,7 +402,9 @@ test_stat =
           ~?= Right
             ( CommandStatement
                 (Val $ StringVal "echo")
-                [Val (StringVal "hello "), Var "a"]
+                [ StringSub
+                    [Val (StringVal "hello "), Var "a"]
+                ]
             )
             --   P.parse statementP "if x then y=nil else end"
             --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
@@ -379,7 +415,7 @@ test_stat =
       ]
 
 -- >>> runTestTT test_stat
--- Counts {cases = 1, tried = 1, errors = 0, failures = 0}
+-- Counts {cases = 2, tried = 2, errors = 0, failures = 0}
 
 test_all :: IO Counts
 test_all = runTestTT $ TestList [test_value, test_exp, test_stat, tParseFiles] -- test_comb

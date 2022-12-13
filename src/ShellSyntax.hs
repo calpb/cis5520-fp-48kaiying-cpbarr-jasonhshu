@@ -46,6 +46,7 @@ data Statement
 data Expression
   = Var Name -- all variables including enviorment vars
   | Val Value -- literal values
+  | StringSub [Expression]
   | Op1 Uop Expression -- unary operators
   | Op2 Expression Bop Expression -- binary operators
   | Expr Expression

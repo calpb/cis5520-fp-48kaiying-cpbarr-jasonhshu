@@ -102,6 +102,16 @@ evalE (Var v) = do
     Just (Gvalue v') -> return v'
     Nothing -> error $ "Variable not found: " ++ show v
 evalE (Val v) = return v
+evalE (StringSub l) = do
+  ss <- S.get
+  return (StringVal (foldr (comb ss) [] l))
+  where
+    comb :: Store -> Expression -> String -> String
+    comb s e acc =
+      case evaluate e s of
+        StringVal val -> val ++ acc
+        IntVal val -> show val ++ acc
+        BoolVal val -> show val ++ acc
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
 evalE (Expr e) = evalE e
