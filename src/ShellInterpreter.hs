@@ -30,10 +30,11 @@ data ShellStore = ShellStore
     printQ :: [IO String]
   }
 
-instance Eq ShellStore where 
+instance Eq ShellStore where
   sa == sb =
-    globalEnvTable sa == globalEnvTable sb 
-    -- && printQ sa == printQ sb 
+    globalEnvTable sa == globalEnvTable sb
+
+-- && printQ sa == printQ sb
 
 type Store = ShellStore
 
@@ -78,7 +79,6 @@ envRemove :: Name -> State Store ()
 envRemove n = do
   ss <- S.get
   S.put (ss {globalEnvTable = Map.delete n (globalEnvTable ss)})
-
 
 test_env :: Test
 test_env =
@@ -253,6 +253,7 @@ evalS (CommandStatement cmd argsarr) = do
     comb s e acc =
       let e' = evaluate e s
        in e' : acc
+evalS Comment = return ()
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
@@ -271,7 +272,7 @@ step (Block (x : xs)) =
     If e sb -> do
       e' <- evalE e
       if toBool e' then return $ sb <> Block xs else return $ Block xs
-    IfElse e sb1 sb2 -> do 
+    IfElse e sb1 sb2 -> do
       e' <- evalE e
       if toBool e' then return $ sb1 <> Block xs else return $ sb2 <> Block xs
     w@(While e sb) -> do
@@ -279,17 +280,19 @@ step (Block (x : xs)) =
       if toBool e'
         then return $ sb <> Block (x : xs)
         else return $ Block xs
-    u@(Until e sb) -> do 
+    u@(Until e sb) -> do
       -- if e is true then break out the loop, otherwise continue looping
       return $ sb <> Block [IfElse e (Block xs) (Block (x : xs))]
     f@(For (Name v) arr sb) ->
       case arr of
         [] -> do
           envRemove v
-          return $ Block xs 
+          return $ Block xs
         x : tl -> do
           envUpdate v (Gvalue x)
           return $ sb <> Block [For (Name v) tl sb] <> Block xs
+    Comment ->
+      return $ Block xs
     _ -> do
       evalS x
       return $ Block xs
@@ -469,7 +472,7 @@ stepper = go initialStepper
               numSteps = case readMaybe (concat strs) of
                 Just x -> x
                 Nothing -> 1
-          in go (getNextSteppers numSteps ss)
+           in go (getNextSteppers numSteps ss)
         -- previous statement
         Just (":p", strs) -> do
           let numSteps :: Int
@@ -547,6 +550,7 @@ qc = do
   -- putStrLn "evalE_total"
   -- quickCheckN 100 prop_evalE_total
   putStrLn "step_total"
-  quickCheckN 100 prop_step_total
-  -- putStrLn "stepExec"
-  -- quickCheckN 100 prop_stepExec
+
+-- quickCheckN 100 prop_step_total
+-- putStrLn "stepExec"
+-- quickCheckN 100 prop_stepExec

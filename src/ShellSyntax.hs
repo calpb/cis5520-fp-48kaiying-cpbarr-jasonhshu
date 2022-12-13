@@ -41,6 +41,7 @@ data Statement
   | For Var [Value] Block -- For loop
   | Until Expression Block -- until loop (a lot like repeat)
   | CommandStatement Expression [Expression]
+  | Comment
   deriving (Eq, Show)
 
 data Expression

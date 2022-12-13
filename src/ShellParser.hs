@@ -42,6 +42,9 @@ test_stringP =
       P.parse (many (stringP "a")) "a  a" ~?= Right [(), ()]
     ]
 
+stringP' :: String -> Parser ()
+stringP' s = wsP' (P.string s) *> pure ()
+
 -- >>> runTestTT test_stringP
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
@@ -67,6 +70,9 @@ test_constP =
 
 -- >>> runTestTT test_constP
 -- Counts {cases = 2, tried = 2, errors = 0, failures = 0}
+
+constP' :: String -> a -> Parser a
+constP' s x = stringP' s *> pure x
 
 parens :: Parser a -> Parser a
 parens x = P.between (stringP "(") x (stringP ")")
@@ -94,15 +100,24 @@ brackets x = P.between (stringP "[") x (stringP "]")
 valueP :: Parser Value
 valueP = intValP <|> boolValP <|> stringValP
 
+valueP' :: Parser Value
+valueP' = intValP' <|> boolValP' <|> stringValP'
+
 -- >>> P.parse (many intValP) "1 2\n 3"
 -- Right [IntVal 1,IntVal 2,IntVal 3]
 intValP :: Parser Value
 intValP = IntVal <$> wsP P.int
 
+intValP' :: Parser Value
+intValP' = IntVal <$> wsP' P.int
+
 -- >>> P.parse (many boolValP) "true false\n true"
 -- Right [BoolVal True,BoolVal False,BoolVal True]
 boolValP :: Parser Value
 boolValP = constP "true" (BoolVal True) <|> constP "false" (BoolVal False)
+
+boolValP' :: Parser Value
+boolValP' = constP' "true" (BoolVal True) <|> constP' "false" (BoolVal False)
 
 escQuotes :: Parser a -> Parser a
 escQuotes x = P.between (P.string "\"") x (P.string "\"")
@@ -111,7 +126,7 @@ escQuotes x = P.between (P.string "\"") x (P.string "\"")
 stringValP :: Parser Value
 stringValP =
   StringVal
-    <$> wsP (P.filter (not . isInfixOf "$" ) (escQuotes (many (P.satisfy (\c ->  c /= '\n' && c /= '\"')))))
+    <$> wsP (P.filter (not . isInfixOf "$") (escQuotes (many (P.satisfy (\c -> c /= '\n' && c /= '\"')))))
 
 -- >>> P.parse stringValP "\"$a \""
 test_stringValP :: Test
@@ -125,6 +140,11 @@ test_stringValP =
 
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
+
+stringValP' :: Parser Value
+stringValP' =
+  StringVal
+    <$> wsP' (P.filter (not . isInfixOf "$") (escQuotes (many (P.satisfy (\c -> c /= '\n' && c /= '\"')))))
 
 -- Parse string until you hit $, \", or `
 stringStopSubP :: Parser Value
@@ -286,18 +306,17 @@ bopP =
 commandExpressionP :: Parser Expression
 commandExpressionP =
   --  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many (expP <|> commandStringP) -- CHECK THIS
-  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
-
+  CommandExpression <$> P.filter (`notElem` (Val . StringVal <$> reserved)) (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
 
 forP :: Parser Statement
-forP = For
-  <$> (stringP "for" *> wsP varP)
-  <*> (stringP "in" *> some (stringValP <|> intValP <|> boolValP))
-  <*> (stringP "do" *> blockP <* stringP "done")
+forP =
+  For
+    <$> (stringP "for" *> wsP varP)
+    <*> (stringP "in" *> wsP (some (stringValP' <|> intValP' <|> boolValP')))
+    <*> (stringP "do" *> blockP <* stringP "done")
 
---- >>> P.parse forP "for var1 in "1" 2 true\ndo\n   echo "hi $var1"\ndone"
--- Variable not in scope: var1 :: String -> t1
--- Variable not in scope: hi
+--- >>> P.parse blockP "# comment"
+-- Right (Block [CommandStatement (Val (StringVal "#")) [Val (StringVal "comment")]])
 
 statementP :: Parser Statement
 statementP =
@@ -325,8 +344,9 @@ statementP =
           Until
             <$> (stringP "until" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
+          constP "#" Comment <* many (P.satisfy (/= '\n')),
           CommandStatement
-            <$> (Val <$> stringNoSubSpaceP)
+            <$> P.filter (`notElem` (Val . StringVal <$> reserved)) (Val <$> stringNoSubSpaceP)
             <*> wsP (many commandStringP)
         ]
     )
