@@ -426,7 +426,9 @@ stepper = go initialStepper
         Just (":pq", _) -> do
           printpq $ printQ (store ss)
           go ss
-        _ -> undefined
+        _ -> do
+        putStrLn "?"
+        go ss
     -- -- next statement
     -- Just (":n", strs) ->
     --   let numSteps :: Int
