@@ -111,7 +111,7 @@ escQuotes x = P.between (P.string "\"") x (P.string "\"")
 stringValP :: Parser Value
 stringValP =
   StringVal
-    <$> wsP (P.filter (not . isInfixOf "$") (escQuotes (many (P.satisfy (/= '\"')))))
+    <$> wsP (P.filter (not . isInfixOf "$" ) (escQuotes (many (P.satisfy (\c ->  c /= '\n' && c /= '\"')))))
 
 -- >>> P.parse stringValP "\"$a \""
 test_stringValP :: Test
@@ -288,6 +288,17 @@ commandExpressionP =
   --  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many (expP <|> commandStringP) -- CHECK THIS
   CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
 
+
+forP :: Parser Statement
+forP = For
+  <$> (stringP "for" *> wsP varP)
+  <*> (stringP "in" *> some (stringValP <|> intValP <|> boolValP))
+  <*> (stringP "do" *> blockP <* stringP "done")
+
+--- >>> P.parse forP "for var1 in "1" 2 true\ndo\n   echo "hi $var1"\ndone"
+-- Variable not in scope: var1 :: String -> t1
+-- Variable not in scope: hi
+
 statementP :: Parser Statement
 statementP =
   wsP
@@ -310,10 +321,7 @@ statementP =
           While
             <$> (stringP "while" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
-          For
-            <$> (stringP "for" *> wsP varP)
-            <*> (stringP "in" *> many stringValP)
-            <*> (stringP "do" *> blockP <* stringP "done"),
+          forP,
           Until
             <$> (stringP "until" *> expP)
             <*> (stringP "do" *> blockP <* stringP "done"),
@@ -441,8 +449,8 @@ assignP = Assign <$> varP <*> (P.char '=' *> expP <|> backticks commandExpressio
 -- >>> P.parse blockP "a=10\nb=20\n\nval=`expr $a + $b`\necho \"a + b : $val\""
 -- Right (Block [Assign (Name "a") (Val (IntVal 10)),Assign (Name "b") (Val (IntVal 20)),Assign (Name "val") (CommandExpression (Val (StringVal "expr")) [Var "a",Val (StringVal "+"),Var "b"]),CommandStatement (Val (StringVal "echo")) [StringSub [Val (StringVal "a + b : "),Var "val"]]])
 
---- >>> P.parse (commandExpressionP) "`expr $a + $b`"
--- Right (CommandExpression (Val (StringVal "`expr")) [Var "a",Val (StringVal "+"),Var "b",Val (StringVal "`")])
+--- >>> P.parse commandExpressionP "expr $a + $b"
+-- Right (CommandExpression (Val (StringVal "expr")) [Var "a"])
 
 -- >>> runTestTT test_stat
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
@@ -450,12 +458,11 @@ assignP = Assign <$> varP <*> (P.char '=' *> expP <|> backticks commandExpressio
 test_all :: IO Counts
 test_all = runTestTT $ TestList [test_value, test_exp, test_stat, tParseFiles] -- test_comb
 
-qc :: IO ()
-qc = do
-  putStrLn "roundtrip_val"
-  -- QC.quickCheck prop_roundtrip_val
-  putStrLn "roundtrip_exp"
-  -- QC.quickCheck prop_roundtrip_exp
-  putStrLn "roundtrip_stat"
-
--- QC.quickCheck prop_roundtrip_stat
+-- qc :: IO ()
+-- qc = do
+--   putStrLn "roundtrip_val"
+--   QC.quickCheck prop_roundtrip_val
+--   putStrLn "roundtrip_exp"
+--   QC.quickCheck prop_roundtrip_exp
+--   putStrLn "roundtrip_stat"
+--   QC.quickCheck prop_roundtrip_stat

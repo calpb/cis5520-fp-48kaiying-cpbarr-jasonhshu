@@ -178,3 +178,6 @@ wArithOps =
           Var "val"
         ]
     ]
+
+quickCheckN :: QC.Testable prop => Int -> prop -> IO ()
+quickCheckN n = QC.quickCheckWith $ QC.stdArgs {QC.maxSuccess = n, QC.maxSize = 100}

@@ -30,6 +30,11 @@ data ShellStore = ShellStore
     printQ :: [IO String]
   }
 
+instance Eq ShellStore where 
+  sa == sb =
+    globalEnvTable sa == globalEnvTable sb 
+    -- && printQ sa == printQ sb 
+
 type Store = ShellStore
 
 -- type Store = Map Name Value
@@ -67,6 +72,13 @@ envUpdate :: Name -> GlobalEnvValue -> State Store ()
 envUpdate n v = do
   ss <- S.get
   S.put (ss {globalEnvTable = Map.insert n v (globalEnvTable ss)})
+
+-- | For some var name remove a reference in the Env table
+envRemove :: Name -> State Store ()
+envRemove n = do
+  ss <- S.get
+  S.put (ss {globalEnvTable = Map.delete n (globalEnvTable ss)})
+
 
 test_env :: Test
 test_env =
@@ -182,13 +194,11 @@ test_evaluateUop =
 -- >>> runTestTT test_evaluateUop
 -- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
 
--- prop_evalE_total :: Expression -> Store -> Bool
--- prop_evalE_total e s = case evaluate e s of
---   NilVal -> True
---   IntVal i -> i `seq` True
---   BoolVal b -> b `seq` True
---   StringVal s -> s `seq` True
---   TableVal n -> n `seq` True
+prop_evalE_total :: Expression -> Store -> Bool
+prop_evalE_total e s = case evaluate e s of
+  IntVal i -> i `seq` True
+  BoolVal b -> b `seq` True
+  StringVal s -> s `seq` True
 
 eval :: Block -> State Store ()
 eval (Block ss) = mapM_ evalS ss
@@ -253,58 +263,72 @@ exec = S.execState . eval
 -- test_exec :: Test
 -- test_exec = TestList [tExecTest, tExecFact, tExecAbs, tExecTimes, tExecTable, tExecBfs]
 
--- -- | Evaluate a single statement and return the rest of the block
--- step :: Block -> State Store Block
--- step (Block []) = pure $ Block []
--- step (Block (x : xs)) =
---   case x of
---     If x1 b1 b2 -> do
---       s <- evalE x1
---       if toBool s then return $ b1 <> Block xs else return $ b2 <> Block xs
---     w@(While x1 b) -> do
---       s <- evalE x1
---       if toBool s
---         then return $ b <> Block (x : xs)
---         else return $ Block xs
---     -- r@(Repeat b x1) -> do
---     --   return $ b <> Block [If x1 (Block xs) (Block (x : xs))]
---     _ -> do
---       evalS x
---       return $ Block xs
+-- | Evaluate a single statement and return the rest of the block
+step :: Block -> State Store Block
+step (Block []) = pure $ Block []
+step (Block (x : xs)) =
+  case x of
+    If e sb -> do
+      e' <- evalE e
+      if toBool e' then return $ sb <> Block xs else return $ Block xs
+    IfElse e sb1 sb2 -> do 
+      e' <- evalE e
+      if toBool e' then return $ sb1 <> Block xs else return $ sb2 <> Block xs
+    w@(While e sb) -> do
+      e' <- evalE e
+      if toBool e'
+        then return $ sb <> Block (x : xs)
+        else return $ Block xs
+    u@(Until e sb) -> do 
+      -- if e is true then break out the loop, otherwise continue looping
+      return $ sb <> Block [IfElse e (Block xs) (Block (x : xs))]
+    f@(For (Name v) arr sb) ->
+      case arr of
+        [] -> do
+          envRemove v
+          return $ Block xs 
+        x : tl -> do
+          envUpdate v (Gvalue x)
+          return $ sb <> Block [For (Name v) tl sb] <> Block xs
+    _ -> do
+      evalS x
+      return $ Block xs
 
--- -- | Make sure that we can step every block in every store
--- prop_step_total :: Block -> Store -> Bool
--- prop_step_total b s = case S.runState (step b) s of
---   (b', s') -> True
+-- | Make sure that we can step every block in every store
+prop_step_total :: Block -> Store -> Bool
+prop_step_total b s = case S.runState (step b) s of
+  (b', s') -> True
 
 -- | Evaluate this block for a specified number of steps
--- boundedStep :: Int -> Block -> State Store Block
--- boundedStep i b =
---   if i > 0
---     then do
---       b' <- step b
---       boundedStep (i - 1) b'
---     else pure b
+boundedStep :: Int -> Block -> State Store Block
+boundedStep i b =
+  if i > 0
+    then do
+      b' <- step b
+      boundedStep (i - 1) b'
+    else pure b
 
 -- | Evaluate this block for a specified nuimber of steps, using the specified store
--- steps :: Int -> Block -> Store -> (Block, Store)
--- steps n block = S.runState (boundedStep n block)
+steps :: Int -> Block -> Store -> (Block, Store)
+steps n block = S.runState (boundedStep n block)
 
--- -- | Is this block completely evaluated?
--- final :: Block -> Bool
--- final (Block []) = True
--- final _ = False
+-- | Is this block completely evaluated?
+final :: Block -> Bool
+final (Block []) = True
+final _ = False
 
--- -- | Evaluate this block to completion
--- execStep :: Block -> Store -> Store
--- execStep = undefined
+-- | Evaluate this block to completion
+execStep :: Block -> Store -> Store
+execStep block s =
+  let (block', st') = S.runState (boundedStep 1 block) s
+   in if final block then st' else execStep block' st' -- execStep block' st'
 
--- prop_stepExec :: Block -> QC.Property
--- prop_stepExec b =
---   not (final b) QC.==> final b1 QC.==> m1 == m2
---   where
---     (b1, m1) = S.runState (boundedStep 100 b) initialStore
---     m2 = exec b initialStore
+prop_stepExec :: Block -> QC.Property
+prop_stepExec b =
+  not (final b) QC.==> final b1 QC.==> m1 == m2
+  where
+    (b1, m1) = S.runState (boundedStep 100 b) initialStore
+    m2 = exec b initialStore
 
 -- -- >>> runTestTT test_execStep
 
@@ -393,16 +417,16 @@ initialStepper =
     }
 
 -- | Retreives a past stepper based on our number of steps
--- getPrevSteppers :: Int -> Stepper -> Stepper
--- getPrevSteppers 0 s = s
--- getPrevSteppers i s = case history s of
---   Just s' -> getPrevSteppers (i - 1) s'
---   Nothing -> s
+getPrevSteppers :: Int -> Stepper -> Stepper
+getPrevSteppers 0 s = s
+getPrevSteppers i s = case history s of
+  Just s' -> getPrevSteppers (i - 1) s'
+  Nothing -> s
 
 -- | Step through given steps at the same time
--- getNextSteppers :: Int -> Stepper -> Stepper
--- getNextSteppers 0 s = s
--- getNextSteppers i s = let (blk, s') = steps 1 (block s) (store s) in getNextSteppers (i - 1) s {block = blk, store = s', history = Just s}
+getNextSteppers :: Int -> Stepper -> Stepper
+getNextSteppers 0 s = s
+getNextSteppers i s = let (blk, s') = steps 1 (block s) (store s) in getNextSteppers (i - 1) s {block = blk, store = s', history = Just s}
 
 -- Step across our Lu file and evaluate statement by statement
 stepper :: IO ()
@@ -439,34 +463,31 @@ stepper = go initialStepper
         Just (":pq", _) -> do
           printpq $ printQ (store ss)
           go ss
-        _ -> do
-          putStrLn "?"
-          go ss
-    -- -- next statement
-    -- Just (":n", strs) ->
-    --   let numSteps :: Int
-    --       numSteps = case readMaybe (concat strs) of
-    --         Just x -> x
-    --         Nothing -> 1
-    --    in go (getNextSteppers numSteps ss)
-    -- -- previous statement
-    -- Just (":p", strs) -> do
-    --   let numSteps :: Int
-    --       numSteps = case readMaybe (concat strs) of
-    --         Just x -> x
-    --         Nothing -> 1
-    --    in let newSS = getPrevSteppers numSteps ss
-    --        in go newSS {block = block newSS, store = store newSS, history = Just newSS}
-    -- -- evaluate an expression in the current state
-    -- _ -> case P.parseLuExp str of
-    --   Right exp -> do
-    --     let v = evaluate exp (store ss)
-    --     -- putStrLn (pretty v)
-    --       putStrLn "pretty v"
-    --     go ss
-    --   Left _s -> do
-    --     putStrLn "?"
-    --     go ss
+        -- next statement
+        Just (":n", strs) ->
+          let numSteps :: Int
+              numSteps = case readMaybe (concat strs) of
+                Just x -> x
+                Nothing -> 1
+          in go (getNextSteppers numSteps ss)
+        -- previous statement
+        Just (":p", strs) -> do
+          let numSteps :: Int
+              numSteps = case readMaybe (concat strs) of
+                Just x -> x
+                Nothing -> 1
+           in let newSS = getPrevSteppers numSteps ss
+               in go newSS {block = block newSS, store = store newSS, history = Just newSS}
+        -- evaluate an expression in the current state
+        _ -> case P.parseLuExp str of
+          Right exp -> do
+            let v = evaluate exp (store ss)
+            -- putStrLn (pretty v)
+            putStrLn "pretty v"
+            go ss
+          Left _s -> do
+            putStrLn "?"
+            go ss
     prompt :: Stepper -> IO ()
     prompt Stepper {block = Block []} = return ()
     prompt Stepper {block = Block (s : _)} =
@@ -521,11 +542,11 @@ stepper = go initialStepper
 
 -- -- >>> runTestTT test_all
 
--- qc :: IO ()
--- qc = do
---   putStrLn "evalE_total"
---   quickCheckN 100 prop_evalE_total
---   putStrLn "step_total"
---   quickCheckN 100 prop_step_total
---   putStrLn "stepExec"
---   quickCheckN 100 prop_stepExec
+qc :: IO ()
+qc = do
+  -- putStrLn "evalE_total"
+  -- quickCheckN 100 prop_evalE_total
+  putStrLn "step_total"
+  quickCheckN 100 prop_step_total
+  -- putStrLn "stepExec"
+  -- quickCheckN 100 prop_stepExec
