@@ -24,6 +24,10 @@ test_wsP =
       P.parse (many (wsP P.alpha)) "a b \n   \t c" ~?= Right "abc"
     ]
 
+-- wsP not including newline
+wsP' :: Parser a -> Parser a
+wsP' p = p <* many (P.satisfy (\c -> Char.isSpace c && c /= '\n'))
+
 -- >>> runTestTT test_wsP
 -- Counts {cases = 2, tried = 2, errors = 0, failures = 0}
 
@@ -122,27 +126,30 @@ test_stringValP =
 -- >>> runTestTT test_stringValP
 -- Counts {cases = 4, tried = 4, errors = 0, failures = 0}
 
-stringNoSubP :: Parser Value
-stringNoSubP =
-  StringVal
-    <$> wsP
-      ( (:)
-          <$> P.satisfy (\c -> c /= '$' && c /= '\"')
-          <*> many (P.satisfy (\c -> c /= '$' && c /= '\"'))
-      )
+-- Parse string until you hit $, \", or `
+stringStopSubP :: Parser Value
+stringStopSubP =
+  let reserved_chars = ['$', '\"', '`']
+   in StringVal
+        <$> wsP
+          ( (:)
+              <$> P.satisfy (`notElem` reserved_chars)
+              <*> many (P.satisfy (`notElem` reserved_chars))
+          )
 
--- | Look for strings that don't contain a dollar sign and stop at a space and esc quotes
+-- | Only accept strings that don't contain a dollar sign and stop at a space, esc quotes, backtick
 stringNoSubSpaceP :: Parser Value
 stringNoSubSpaceP =
-  StringVal
-    <$> wsP
-      ( P.filter
-          (not . isInfixOf "$")
-          ( (:)
-              <$> P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"')
-              <*> many (P.satisfy (\c -> (not . Char.isSpace) c && c /= '\"'))
+  let reserved_chars = ['\"', '`']
+   in StringVal
+        <$> wsP'
+          ( P.filter
+              (not . isInfixOf "$")
+              ( (:)
+                  <$> P.satisfy (\c -> (not . Char.isSpace) c && notElem c reserved_chars)
+                  <*> many (P.satisfy (\c -> (not . Char.isSpace) c && notElem c reserved_chars))
+              )
           )
-      )
 
 -- >>> P.parse stringNoSpaceP "echo 1 2"
 -- Right "echo"
@@ -153,11 +160,11 @@ stringNoSubSpaceP =
 stringSubP :: Parser Expression
 stringSubP =
   StringSub
-    <$> wsP
+    <$> wsP'
       ( escQuotes
           ( (:)
-              <$> ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringNoSubP))
-              <*> many ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringNoSubP))
+              <$> ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringStopSubP))
+              <*> many ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringStopSubP))
           )
       )
 
@@ -165,9 +172,10 @@ stringSubP =
 -- Right [StringSub [Var "a",Val (StringVal " is neq to "),Var "b",Val (StringVal " ")],StringSub [Val (StringVal " "),Var "a",Val (StringVal " is eq to "),Var "a",Val (StringVal ".")]]
 
 commandStringP :: Parser Expression
-commandStringP = (Val <$> stringNoSubSpaceP) <|> (Var <$> (P.char '$' *> nameP)) <|> stringSubP
+commandStringP = (Val <$> stringNoSubSpaceP) <|> (Var <$> wsP' (P.char '$' *> nameP)) <|> stringSubP
 
--- >>> P.parse commandStringP "command \"$a1 neq $b2.\" $c something"
+-- >>> P.parse commandExpressionP "command \"$a1 neq $b2.\" $c something\nvar=10"
+-- Right (CommandExpression (Val (StringVal "command")) [StringSub [Var "a1",Val (StringVal " neq "),Var "b2",Val (StringVal ".")],Var "c",Val (StringVal "something")])
 
 -- TODO : fix this part
 -- Figure out operation precedence
@@ -276,9 +284,9 @@ bopP =
     )
 
 commandExpressionP :: Parser Expression
-commandExpressionP = 
+commandExpressionP =
   --  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many (expP <|> commandStringP) -- CHECK THIS
-    CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
+  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
 
 statementP :: Parser Statement
 statementP =
@@ -311,7 +319,7 @@ statementP =
             <*> (stringP "do" *> blockP <* stringP "done"),
           CommandStatement
             <$> (Val <$> stringNoSubSpaceP)
-            <*> many commandStringP
+            <*> wsP (many commandStringP)
         ]
     )
 
@@ -407,35 +415,37 @@ test_stat =
                     [Val (StringVal "hello "), Var "a"]
                 ]
             ),
-        P.parse statementP "val=`expr $a + $b`" 
+        P.parse statementP "val=`expr $a + $b`"
           ~?= Right
-            ( Assign (Name "val")
-              (CommandExpression 
-                (Val $ StringVal "expr")
-                [ Var "a", Val $ StringVal "+", Var "b"]
-              )
+            ( Assign
+                (Name "val")
+                ( CommandExpression
+                    (Val $ StringVal "expr")
+                    [Var "a", Val $ StringVal "+", Var "b"]
+                )
             )
-        --   P.parse statementP "if x then y=nil else end"
-        --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
-        --   P.parse statementP "while nil do end"
-        --     ~?= Right (While (Val NilVal) (Block [])),
-        --   P.parse statementP "repeat ; ; until false"
-        --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+            --   P.parse statementP "if x then y=nil else end"
+            --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+            --   P.parse statementP "while nil do end"
+            --     ~?= Right (While (Val NilVal) (Block [])),
+            --   P.parse statementP "repeat ; ; until false"
+            --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
       ]
 
---- >>> P.parse (many (expP <|> commandStringP)) "$a + $b" 
+--- >>> P.parse (many (expP <|> commandStringP)) "$a + $b"
 -- Right [Op2 (Var "a") Plus (Var "b")]
 
-
-
 assignP :: Parser Statement
-assignP = Assign <$> varP <*> ( P.char '=' *> expP <|> backticks commandExpressionP) 
+assignP = Assign <$> varP <*> (P.char '=' *> expP <|> backticks commandExpressionP)
 
---- >>> P.parse commandExpressionP "expr $a + $b"
--- Right (CommandExpression (Val (StringVal "expr")) [Var "a"])
+-- >>> P.parse blockP "a=10\nb=20\n\nval=`expr $a + $b`\necho \"a + b : $val\""
+-- Right (Block [Assign (Name "a") (Val (IntVal 10)),Assign (Name "b") (Val (IntVal 20)),Assign (Name "val") (CommandExpression (Val (StringVal "expr")) [Var "a",Val (StringVal "+"),Var "b"]),CommandStatement (Val (StringVal "echo")) [StringSub [Val (StringVal "a + b : "),Var "val"]]])
+
+--- >>> P.parse (commandExpressionP) "`expr $a + $b`"
+-- Right (CommandExpression (Val (StringVal "`expr")) [Var "a",Val (StringVal "+"),Var "b",Val (StringVal "`")])
 
 -- >>> runTestTT test_stat
--- Counts {cases = 3, tried = 3, errors = 0, failures = 1}
+-- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
 test_all :: IO Counts
 test_all = runTestTT $ TestList [test_value, test_exp, test_stat, tParseFiles] -- test_comb
