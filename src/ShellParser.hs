@@ -131,6 +131,7 @@ stringNoSubP =
           <*> many (P.satisfy (\c -> c /= '$' && c /= '\"'))
       )
 
+-- | Look for strings that don't contain a dollar sign and stop at a space and esc quotes
 stringNoSubSpaceP :: Parser Value
 stringNoSubSpaceP =
   StringVal
@@ -274,6 +275,11 @@ bopP =
         ]
     )
 
+commandExpressionP :: Parser Expression
+commandExpressionP = 
+  --  CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many (expP <|> commandStringP) -- CHECK THIS
+    CommandExpression <$> (Val <$> stringNoSubSpaceP) <*> many commandStringP -- CHECK THIS
+
 statementP :: Parser Statement
 statementP =
   wsP
@@ -282,13 +288,8 @@ statementP =
           constP "break" Break,
           Assign
             <$> varP
-            <*> ( stringP "="
-                    *> ( expP
-                           <|> backticks
-                             ( CommandExpression
-                                 <$> (Val <$> stringNoSubSpaceP)
-                                 <*> many (expP <|> commandStringP) -- CHECK THIS
-                             )
+            <*> ( P.char '='
+                    *> ( expP <|> backticks commandExpressionP
                        )
                 ),
           If
@@ -405,17 +406,36 @@ test_stat =
                 [ StringSub
                     [Val (StringVal "hello "), Var "a"]
                 ]
+            ),
+        P.parse statementP "val=`expr $a + $b`" 
+          ~?= Right
+            ( Assign (Name "val")
+              (CommandExpression 
+                (Val $ StringVal "expr")
+                [ Var "a", Val $ StringVal "+", Var "b"]
+              )
             )
-            --   P.parse statementP "if x then y=nil else end"
-            --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
-            --   P.parse statementP "while nil do end"
-            --     ~?= Right (While (Val NilVal) (Block [])),
-            --   P.parse statementP "repeat ; ; until false"
-            --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
+        --   P.parse statementP "if x then y=nil else end"
+        --     ~?= Right (If (Var (Name "x")) (Block [Assign (Name "y") (Val NilVal)]) (Block [])),
+        --   P.parse statementP "while nil do end"
+        --     ~?= Right (While (Val NilVal) (Block [])),
+        --   P.parse statementP "repeat ; ; until false"
+        --     ~?= Right (Repeat (Block [Empty, Empty]) (Val (BoolVal False)))
       ]
 
+--- >>> P.parse (many (expP <|> commandStringP)) "$a + $b" 
+-- Right [Op2 (Var "a") Plus (Var "b")]
+
+
+
+assignP :: Parser Statement
+assignP = Assign <$> varP <*> ( P.char '=' *> expP <|> backticks commandExpressionP) 
+
+--- >>> P.parse commandExpressionP "expr $a + $b"
+-- Right (CommandExpression (Val (StringVal "expr")) [Var "a"])
+
 -- >>> runTestTT test_stat
--- Counts {cases = 2, tried = 2, errors = 0, failures = 0}
+-- Counts {cases = 3, tried = 3, errors = 0, failures = 1}
 
 test_all :: IO Counts
 test_all = runTestTT $ TestList [test_value, test_exp, test_stat, tParseFiles] -- test_comb

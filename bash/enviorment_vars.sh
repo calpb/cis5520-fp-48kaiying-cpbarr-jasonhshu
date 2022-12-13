@@ -1,4 +1,2 @@
-#!/bin/sh
-
-$TEST="Unix Programming"
-$echo $TEST
+TEST="Unix Programming"
+echo $TEST

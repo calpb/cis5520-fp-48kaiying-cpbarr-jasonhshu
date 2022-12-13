@@ -42,6 +42,7 @@ execCmd' command args = do
       err <- hGetContents err
       if null err then return out else error err
 
+
 -- runCmd :: Value -> [Value] -> String 
 -- runCmd command args = do
 --   hClose stdout
@@ -65,5 +66,5 @@ execCmd' command args = do
 -- No such binary found: "ls"
 
 
--- >>> execCommand (StringVal "expr") [(IntVal 3), (StringVal "+"), (IntVal 4)]
--- "expr": createProcess: posix_spawnp: does not exist (No such file or directory)
+-- >>> execCmd (StringVal "expr") [(IntVal 3), (StringVal "+"), (IntVal 4)]
+-- No such binary found: expr
