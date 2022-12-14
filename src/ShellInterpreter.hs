@@ -206,13 +206,9 @@ eval (Block ss) = mapM_ evalS ss
 
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
-evalS (Assign (Name v) e) =
-  case e of
-    cmdexpr@(CommandExpression _ _) ->
-      envUpdate v (Gexpression cmdexpr)
-    noncmdexpr -> do
-      e' <- evalE noncmdexpr
-      envUpdate v (Gvalue e')
+evalS (Assign (Name v) e) = do
+    e' <- evalE e
+    envUpdate v (Gvalue e')
 evalS (If e sb) = do
   e' <- evalE e
   when (toBool e') $ eval sb

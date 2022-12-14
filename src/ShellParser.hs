@@ -469,12 +469,6 @@ test_stat =
 assignP :: Parser Statement
 assignP = Assign <$> varP <*> (P.char '=' *> expP <|> backticks commandExpressionP)
 
--- >>> P.parse blockP "a=10\nb=20\n\nval=`expr $a + $b`\necho \"a + b : $val\""
--- Right (Block [Assign (Name "a") (Val (IntVal 10)),Assign (Name "b") (Val (IntVal 20)),Assign (Name "val") (CommandExpression (Val (StringVal "expr")) [Var "a",Val (StringVal "+"),Var "b"]),CommandStatement (Val (StringVal "echo")) [StringSub [Val (StringVal "a + b : "),Var "val"]]])
-
---- >>> P.parse commandExpressionP "expr $a + $b"
--- Right (CommandExpression (Val (StringVal "expr")) [Var "a"])
-
 -- >>> runTestTT test_stat
 -- Counts {cases = 3, tried = 3, errors = 0, failures = 0}
 
