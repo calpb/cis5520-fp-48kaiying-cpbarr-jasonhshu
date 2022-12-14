@@ -243,16 +243,33 @@ evalS (For (Name v) arr sb) =
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
   ss <- S.get
-  let args' = foldr (comb ss) [] argsarr
-  let retStr = Commands.execCmd cmd' args'
+  let args' = foldr (helper ss) [] argsarr
+  updateManyVars args'
+  let retStr = Commands.execCmd cmd' (snd <$> args')
   -- putStrLn retStr
   S.put (ss {printQ = printQ ss ++ [retStr]})
   return ()
   where
+    updateManyVars :: [(Maybe Name, Value)] -> State Store ()
+    updateManyVars [] = return ()
+    updateManyVars ((Nothing, _) : tl) = updateManyVars tl 
+    updateManyVars ((Just n, v) : tl) = 
+      envUpdate n (Gvalue v) >> updateManyVars tl 
+    helper :: Store -> Expression -> [(Maybe Name, Value)] -> [(Maybe Name, Value)]
+    helper s e acc =
+      let e' = evaluate e s in
+      case e of
+        Var name -> (Just name, e') : acc
+        _ -> (Nothing, e') : acc 
     comb :: Store -> Expression -> [Value] -> [Value]
     comb s e acc =
       let e' = evaluate e s
        in e' : acc
+    -- subAndUpdate :: [Expression] -> State Store [Value]
+    -- subAndUpdate [] = return []
+    -- subAndUpdate (e : tl) = do 
+    --   e' <- evalE e 
+    --   return e' : subAndUpdate tl    
 evalS Comment = return ()
 
 exec :: Block -> Store -> Store

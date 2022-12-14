@@ -57,7 +57,6 @@ data Value
   = IntVal Int -- 1
   | BoolVal Bool -- false, true
   | StringVal String -- "abd"
-  -- TODO: add arrays here
   deriving (Eq, Show, Ord)
 
 data Uop
