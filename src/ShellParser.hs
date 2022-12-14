@@ -139,10 +139,7 @@ stringStopSubP =
   let reserved_chars = ['$', '\"', '`']
    in StringVal
         <$> wsP
-          ( (:)
-              <$> P.satisfy (`notElem` reserved_chars)
-              <*> many (P.satisfy (`notElem` reserved_chars))
-          )
+          (some (P.satisfy (`notElem` reserved_chars)))
 
 -- | Only accept strings that don't contain a dollar sign and stop at a space, esc quotes, backtick
 stringNoSubSpaceP :: Parser Value
@@ -152,10 +149,7 @@ stringNoSubSpaceP =
         <$> wsP'
           ( P.filter
               (not . isInfixOf "$")
-              ( (:)
-                  <$> P.satisfy (\c -> (not . Char.isSpace) c && notElem c reserved_chars)
-                  <*> many (P.satisfy (\c -> (not . Char.isSpace) c && notElem c reserved_chars))
-              )
+              (some (P.satisfy (\c -> (not . Char.isSpace) c && notElem c reserved_chars)))
           )
 
 -- A generalization of stringValP which allows for substitution (parses variable names)
@@ -164,10 +158,7 @@ stringSubP =
   StringSub
     <$> wsP'
       ( escQuotes
-          ( (:)
-              <$> ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringStopSubP))
-              <*> many ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringStopSubP))
-          )
+          (some ((Var <$> (P.char '$' *> nameP)) <|> (Val <$> stringStopSubP)))
       )
 
 test_stringSub :: Test
