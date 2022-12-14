@@ -22,3 +22,14 @@ execCmd command args = do
       out <- hGetContents hout
       err <- hGetContents err
       if null err then return out else error err
+
+-- >>> execCmd (StringVal "date") []
+-- "Wed Dec 14 02:35:30 PM EST 2022\n"
+
+
+-- >>> execCmd (StringVal "ls") [(StringVal "+")]
+-- ls: cannot access '+': No such file or directory
+
+
+-- >>> execCmd (StringVal "expr") [(IntVal 3), (StringVal "+"), (IntVal 4)]
+-- "7\n"
