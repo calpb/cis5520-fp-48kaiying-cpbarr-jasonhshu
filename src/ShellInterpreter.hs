@@ -19,9 +19,6 @@ import Text.Read (readMaybe)
 import System.IO.Unsafe
 import ShellSyntax (Value(StringVal))
 
--- TODO make command assignment lazy
--- Get end-to-end testing working first, then use monad transformers
-
 data GlobalEnvValue
   = Gvalue Value
   | Gexpression Expression
@@ -36,11 +33,7 @@ instance Eq ShellStore where
   sa == sb =
     globalEnvTable sa == globalEnvTable sb
 
--- && printQ sa == printQ sb
-
 type Store = ShellStore
-
--- type Store = Map Name Value
 
 initialStore :: Store
 initialStore =
@@ -98,15 +91,11 @@ test_env =
         S.evalState (envUpdate "x" (Gvalue $ IntVal 100) >> envUpdate "x" (Gvalue $ IntVal 200) >> envGet "x") extendedStore ~?= Just (Gvalue $ IntVal 200)
       ]
 
--- >>> runTestTT test_env
--- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
 
 evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
 
 -- | Expression evaluator
--- evalE :: MonadState Store m => (String -> [String] -> m String) -> Expression -> Store Value
--- evalE execCommand (Var v) = do
 evalE :: Expression -> State Store Value
 evalE (Var v) = do
   -- wait until we need value of var to evaluate stored command
@@ -136,8 +125,6 @@ evalE (CommandExpression cmd argsarr) = do
   cmd' <- evalE cmd
   let args' = foldr (comb ss) [] argsarr
   let returnString = Commands.execCmd cmd' args' -- return the value from runCommand
-  -- Put the return string in the queue?
-  -- return (StringVal returnString)
   return $ StringVal $ unsafePerformIO returnString
   where
     comb :: Store -> Expression -> [Value] -> [Value]
@@ -192,15 +179,6 @@ test_evaluateUop =
         evaluate (Op1 DashNLen (Val (StringVal "txt"))) initialStore ~?= BoolVal True
       ]
 
--- >>> runTestTT test_evaluateUop
--- Counts {cases = 7, tried = 7, errors = 0, failures = 0}
-
-prop_evalE_total :: Expression -> Store -> Bool
-prop_evalE_total e s = case evaluate e s of
-  IntVal i -> i `seq` True
-  BoolVal b -> b `seq` True
-  StringVal s -> s `seq` True
-
 eval :: Block -> State Store ()
 eval (Block ss) = mapM_ evalS ss
 
@@ -254,12 +232,6 @@ evalS Comment = return ()
 exec :: Block -> Store -> Store
 exec = S.execState . eval
 
--- -- >>> runTestTT test_exec
--- -- Counts {cases = 6, tried = 6, errors = 0, failures = 0}
-
--- test_exec :: Test
--- test_exec = TestList [tExecTest, tExecFact, tExecAbs, tExecTimes, tExecTable, tExecBfs]
-
 -- | Evaluate a single statement and return the rest of the block
 step :: Block -> State Store Block
 step (Block []) = pure $ Block []
@@ -297,11 +269,6 @@ step (Block (x : xs)) =
       evalS x
       return $ Block xs
 
--- | Make sure that we can step every block in every store
-prop_step_total :: Block -> Store -> Bool
-prop_step_total b s = case S.runState (step b) s of
-  (b', s') -> True
-
 -- | Evaluate this block for a specified number of steps
 boundedStep :: Int -> Block -> State Store Block
 boundedStep i b =
@@ -326,12 +293,6 @@ execStep block s =
   let (block', st') = S.runState (boundedStep 1 block) s
    in if final block then st' else execStep block' st' -- execStep block' st'
 
-prop_stepExec :: Block -> QC.Property
-prop_stepExec b =
-  not (final b) QC.==> final b1 QC.==> m1 == m2
-  where
-    (b1, m1) = S.runState (boundedStep 100 b) initialStore
-    m2 = exec b initialStore
 data Stepper = Stepper
   { filename :: Maybe String,
     block :: Block,
@@ -435,54 +396,3 @@ stepper = go initialStepper
       str <- x
       putStrLn str
       printpq tl
-
--- type StateT :: Type -> (Type -> Type) -> Type -> Type
--- newtype StateT s m a = MkStateT {runStateT :: s -> m (a, s)}
-
--- instance Monad m => Monad (StateT s m) where
---   return :: a -> StateT s m a
---   return x = MkStateT $ \s -> return (x, s)
---   (>>=) :: StateT s m a -> (a -> StateT s m b) -> StateT s m b
---   p >>= f = MkStateT $ \s -> do
---     (r, s') <- runStateT p s
---     runStateT (f r) s'
-
--- instance Monad m => Applicative (StateT s m) where
---   pure = return
---   (<*>) = ap
-
--- instance Monad m => Functor (StateT s m) where
---   fmap = liftM
-
--- instance Monad m => MonadState s (StateT s m) where
---   get :: StateT s m s
---   get = MkStateT getIt
---     where
---       getIt :: s -> m (s, s)
-
---       getIt s = return (s, s)
-
---   put :: s -> StateT s m ()
---   put s = MkStateT putIt
---     where
---       putIt :: s -> m ((), s)
-
---       -- _s1 is the old state. we want to throw it away and replace it
---       -- with the new state s
---       putIt _s1 = return ((), s)
-
--- -------------------------- all properties and tests in this module  -----------------------------
-
--- test_all :: IO Counts
--- test_all = runTestTT $ TestList [test_index, test_update, test_resolveVar, test_evaluateNot, test_evaluateLen, test_exec, test_execStep]
-
--- -- >>> runTestTT test_all
-
-qc :: IO ()
-qc = do
-  -- putStrLn "evalE_total"
-  -- quickCheckN 100 prop_evalE_total
-  putStrLn "step_total"
-  -- quickCheckN 100 prop_step_total
-  -- putStrLn "stepExec"
-  -- quickCheckN 100 prop_stepExec

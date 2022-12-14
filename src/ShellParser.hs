@@ -326,10 +326,7 @@ statementP =
           constP "break" Break,
           Assign
             <$> varP
-            <*> ( P.char '='
-                    *> ( expP <|> backticks commandExpressionP
-                       )
-                ),
+            <*> ( P.char '=' *> ( expP <|> backticks commandExpressionP)),
           If
             <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP <* stringP "fi"),

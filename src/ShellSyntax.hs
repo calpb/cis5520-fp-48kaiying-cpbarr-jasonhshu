@@ -7,10 +7,6 @@ import Data.Char qualified as Char
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Test.HUnit
-import Test.QuickCheck (Arbitrary (..), Gen)
-import Test.QuickCheck qualified as QC
-import Text.PrettyPrint (Doc, (<+>))
-import Text.PrettyPrint qualified as PP
 import Text.Read (Lexeme (String))
 
 newtype Block = Block [Statement] -- s1 ... sn
@@ -195,14 +191,3 @@ wForLoop =
             ]
         )
     ]
-
-
-wWhileTest = 
-  Block
-    [
-      
-    ]
-
-
-quickCheckN :: QC.Testable prop => Int -> prop -> IO ()
-quickCheckN n = QC.quickCheckWith $ QC.stdArgs {QC.maxSuccess = n, QC.maxSize = 100}

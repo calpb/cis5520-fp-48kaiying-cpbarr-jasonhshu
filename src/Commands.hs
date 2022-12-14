@@ -6,14 +6,6 @@ import ShellSyntax
 import System.IO
 import System.Process
 import System.Directory
-import Control.Exception
-
-data MyException
-  = ErrNoBin String
-  | ErrRuntimeErr String
-  deriving Show
-
-instance Exception MyException
 
 valToString :: Value -> String
 valToString (IntVal x) = show x
@@ -30,33 +22,6 @@ execCmd command args = do
       out <- hGetContents hout
       err <- hGetContents err
       if null err then return out else error err
-
-execCmd' :: String -> [String] -> IO String
-execCmd' command args = do
-  path <- findExecutable command
-  case path of 
-    Nothing -> error $ "No such binary found: " ++ command
-    Just _  -> do
-      (_, Just hout, Just err, _) <- createProcess (proc command args) {std_out = CreatePipe, std_err = CreatePipe}
-      out <- hGetContents hout
-      err <- hGetContents err
-      if null err then return out else error err
-
-
--- runCmd :: Value -> [Value] -> String 
--- runCmd command args = do
---   hClose stdout
---   catch (
---     do 
---       execCmd command args 
---    )
---    (\case
---       ErrNoBin x ->
---         hPutStrLn stderr x
---       ErrRuntimeErr x ->
---         hPutStrLn stderr x
---    )
-
 
 
 -- >>> date
