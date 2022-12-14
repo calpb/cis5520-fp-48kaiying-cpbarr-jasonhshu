@@ -38,7 +38,7 @@ do
    do
       if [ $var1 -eq 2 -a $var2 -eq 0 ]
       then
-         break 2
+         break
       else
          echo "$var1 $var2"
       fi

@@ -334,7 +334,7 @@ statementP =
             <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP <* stringP "fi"),
           IfElse
-            <$> (stringP "ifelse" *> expP)
+            <$> (stringP "if" *> expP)
             <*> (stringP "then" *> blockP)
             <*> (stringP "else" *> blockP <* stringP "fi"),
           While
@@ -353,6 +353,9 @@ statementP =
 
 blockP :: Parser Block
 blockP = Block <$> many statementP
+
+-- >>> P.parse blockP "if [ $var1 -eq 2 -a $var2 -eq 0 ]\nthen\n  break\nelse\n  echo \"$var1 $var2\"\nfi"
+-- Right (Block [])
 
 parseLuExp :: String -> Either P.ParseError Expression
 parseLuExp = P.parse expP
