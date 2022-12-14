@@ -201,45 +201,61 @@ prop_evalE_total e s = case evaluate e s of
   BoolVal b -> b `seq` True
   StringVal s -> s `seq` True
 
-eval :: Block -> State Store ()
-eval (Block ss) = mapM_ evalS ss
+eval :: Block -> State Store LoopControl
+eval (Block ss) = map_ evalS ss
+
+type LoopControl = Bool
 
 -- | Statement evaluator
-evalS :: Statement -> State Store ()
+evalS :: Statement -> State Store LoopControl
 evalS (Assign (Name v) e) =
   case e of
     cmdexpr@(CommandExpression _ _) ->
       envUpdate v (Gexpression cmdexpr)
+      return True 
     noncmdexpr -> do
       e' <- evalE noncmdexpr
       envUpdate v (Gvalue e')
+      return True 
 evalS (If e sb) = do
   e' <- evalE e
   when (toBool e') $ eval sb
+  return True
 evalS (IfElse e sb1 sb2) = do
   e' <- evalE e
   if toBool e' then eval sb1 else eval sb2
-evalS Continue = return () -- think
-evalS Break = return () -- think
+  return True
+evalS Continue = return False -- maybe not right 
+evalS Break = return False
 evalS s@(While e sb) = do
   e' <- evalE e
   if toBool e'
-    then eval sb >> evalS s
-    else return ()
+    then do
+      isLoopControl <- eval sb
+      if not isLoopControl 
+        then return True
+        else evalS s
+    else return True
 evalS s@(Until e sb) = do
   eval sb
   e' <- evalE e
   if not (toBool e')
-    then evalS s
-    else return () -- stop once expression is true
+    then do  
+      isLoopControl <- evalS s
+      if not isLoopControl
+        then return True
+        else evalS s
+    else return True -- stop once expression is true
 evalS (For (Name v) arr sb) =
   case arr of
-    [] -> return ()
+    [] -> return True
     x : tl -> do
       envUpdate v (Gvalue x)
-      eval sb
+      isLoopControl <- eval sb
       envRemove v 
-      evalS (For (Name v) tl sb)
+      if not isLoopControl 
+        then return True 
+        else evalS (For (Name v) tl sb)
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
   ss <- S.get
@@ -247,13 +263,13 @@ evalS (CommandStatement cmd argsarr) = do
   let retStr = Commands.execCmd cmd' args'
   -- putStrLn retStr
   S.put (ss {printQ = printQ ss ++ [retStr]})
-  return ()
+  return True
   where
     comb :: Store -> Expression -> [Value] -> [Value]
     comb s e acc =
       let e' = evaluate e s
        in e' : acc
-evalS Comment = return ()
+evalS Comment = return True
 
 exec :: Block -> Store -> Store
 exec = S.execState . eval
