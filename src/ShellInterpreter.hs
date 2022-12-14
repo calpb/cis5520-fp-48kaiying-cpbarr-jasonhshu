@@ -16,6 +16,8 @@ import State qualified as S
 import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Read (readMaybe)
+import System.IO.Unsafe
+import ShellSyntax (Value(StringVal))
 
 -- TODO make command assignment lazy
 -- Get end-to-end testing working first, then use monad transformers
@@ -137,7 +139,7 @@ evalE (CommandExpression cmd argsarr) = do
   let returnString = Commands.execCmd cmd' args' -- return the value from runCommand
   -- Put the return string in the queue?
   -- return (StringVal returnString)
-  return $ StringVal "Stub String"
+  return $ StringVal $ unsafePerformIO returnString
   where
     comb :: Store -> Expression -> [Value] -> [Value]
     comb s e acc =
@@ -235,10 +237,9 @@ evalS (For (Name v) arr sb) =
   case arr of
     [] -> return ()
     x : tl -> do
-      prevTable <- S.get -- add loop var in state
       envUpdate v (Gvalue x)
       eval sb
-      S.put prevTable -- restore state
+      envRemove v 
       evalS (For (Name v) tl sb)
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
@@ -441,9 +442,13 @@ stepper = go initialStepper
       putStr (fromMaybe "sh" (filename ss) ++ "> ")
       str <- getLine
       case List.uncons (words str) of
+        -- For testing only
+        Just (":test", _) -> do
+          let testblock = wForLoop
+          go ss {filename = Just "", block = testblock, store = initialStore, history = Just ss}
         -- load a file for stepping
         Just (":l", [fn]) -> do
-          -- putStr "loading file"
+          putStr "loading file"
           result <- P.parseLuFile fn
           putStrLn "Printing parse output ---------"
           putStrLn (show result)
@@ -497,7 +502,7 @@ stepper = go initialStepper
       -- putStr "--> " >> putStrLn (pretty s)
       putStr "--> " >> putStrLn (show s)
     printpq :: [IO String] -> IO ()
-    printpq [] = putStrLn "End of Print Queue"
+    printpq [] = putStrLn ""
     printpq (x : tl) = do
       str <- x
       putStrLn str
@@ -550,7 +555,6 @@ qc = do
   -- putStrLn "evalE_total"
   -- quickCheckN 100 prop_evalE_total
   putStrLn "step_total"
-
--- quickCheckN 100 prop_step_total
--- putStrLn "stepExec"
--- quickCheckN 100 prop_stepExec
+  -- quickCheckN 100 prop_step_total
+  -- putStrLn "stepExec"
+  -- quickCheckN 100 prop_stepExec

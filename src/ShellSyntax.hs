@@ -180,5 +180,30 @@ wArithOps =
         ]
     ]
 
+wForLoop = 
+  Block 
+    [
+      For 
+        (Name "loopvar")
+        [IntVal 1, IntVal 2, IntVal 3]
+        (Block
+            [
+              CommandStatement
+                (Val (StringVal "echo"))
+                [ Val (StringVal "Hello "),
+                  Var "loopvar"
+                ]
+            ]
+        )
+    ]
+
+
+wWhileTest = 
+  Block
+    [
+      
+    ]
+
+
 quickCheckN :: QC.Testable prop => Int -> prop -> IO ()
 quickCheckN n = QC.quickCheckWith $ QC.stdArgs {QC.maxSuccess = n, QC.maxSize = 100}
