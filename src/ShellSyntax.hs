@@ -50,7 +50,6 @@ data Expression
   | StringSub [Expression]
   | Op1 Uop Expression -- unary operators
   | Op2 Expression Bop Expression -- binary operators
-  | Expr Expression
   | CommandExpression Expression [Expression] -- x=`echo "hello"`
   deriving (Eq, Show)
 

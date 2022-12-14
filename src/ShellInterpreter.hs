@@ -131,7 +131,6 @@ evalE (StringSub l) = do
         BoolVal val -> show val ++ acc
 evalE (Op2 e1 o e2) = evalOp2 o <$> evalE e1 <*> evalE e2
 evalE (Op1 o e1) = evalOp1 o <$> evalE e1
-evalE (Expr e) = evalE e
 evalE (CommandExpression cmd argsarr) = do
   ss <- S.get
   cmd' <- evalE cmd
@@ -294,6 +293,10 @@ step (Block (x : xs)) =
           return $ sb <> Block [For (Name v) tl sb] <> Block xs
     Comment ->
       return $ Block xs
+    Break ->
+      return $ Block []
+    Continue -> 
+      return $ Block []
     _ -> do
       evalS x
       return $ Block xs

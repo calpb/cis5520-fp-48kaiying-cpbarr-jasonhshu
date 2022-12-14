@@ -7,5 +7,5 @@ do
    then
       break
    fi
-   a=`expr $a + 1`
+   a=`$a + 1`
 done
