@@ -3,9 +3,9 @@
 module Commands where
 
 import ShellSyntax
+import System.Directory
 import System.IO
 import System.Process
-import System.Directory
 
 valToString :: Value -> String
 valToString (IntVal x) = show x
@@ -15,21 +15,10 @@ valToString (StringVal x) = x
 execCmd :: Value -> [Value] -> IO String
 execCmd command args = do
   path <- findExecutable (valToString command)
-  case path of 
+  case path of
     Nothing -> error $ "No such binary found: " ++ valToString command
-    Just _  -> do
+    Just _ -> do
       (_, Just hout, Just err, _) <- createProcess (proc (valToString command) (map valToString args)) {std_out = CreatePipe, std_err = CreatePipe}
       out <- hGetContents hout
       err <- hGetContents err
       if null err then return out else error err
-
-
--- >>> date
-
-
--- >>> execCmd (StringVal "ls") [(StringVal "+")]
--- No such binary found: "ls"
-
-
--- >>> execCmd (StringVal "expr") [(IntVal 3), (StringVal "+"), (IntVal 4)]
--- No such binary found: expr

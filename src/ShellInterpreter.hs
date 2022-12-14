@@ -11,13 +11,13 @@ import GHC.Base (undefined)
 import GHC.Real (underflowError)
 import ShellParser qualified as P
 import ShellSyntax
+import ShellSyntax (Value (StringVal))
 import State (State)
 import State qualified as S
+import System.IO.Unsafe
 import Test.HUnit (Counts, Test (..), runTestTT, (~:), (~?=))
 import Test.QuickCheck qualified as QC
 import Text.Read (readMaybe)
-import System.IO.Unsafe
-import ShellSyntax (Value(StringVal))
 
 data GlobalEnvValue
   = Gvalue Value
@@ -91,7 +91,6 @@ test_env =
         S.evalState (envUpdate "x" (Gvalue $ IntVal 100) >> envUpdate "x" (Gvalue $ IntVal 200) >> envGet "x") extendedStore ~?= Just (Gvalue $ IntVal 200)
       ]
 
-
 evaluate :: Expression -> Store -> Value
 evaluate e = S.evalState (evalE e)
 
@@ -104,7 +103,7 @@ evalE (Var v) = do
     Just (Gexpression e) -> do
       e' <- evalE e
       envUpdate v (Gvalue e')
-      return e' -- TODO check updating variable
+      return e'
     Just (Gvalue v') -> return v'
     Nothing -> error $ "Variable not found: " ++ show v
 evalE (Val v) = return v
@@ -129,7 +128,6 @@ evalE (CommandExpression cmd argsarr) = do
   where
     comb :: Store -> Expression -> [Value] -> [Value]
     comb s e acc =
-      -- e' <- S.evalState (evalE e) st
       let e' = evaluate e s
        in e' : acc
 
@@ -140,7 +138,7 @@ evalOp1 DashZLen (StringVal []) = BoolVal True
 evalOp1 DashZLen (StringVal _) = BoolVal False
 evalOp1 DashNLen (StringVal []) = BoolVal False
 evalOp1 DashNLen (StringVal _) = BoolVal True
-evalOp1 _ _ = error "Unsupported unary operation" -- other operations are not defined, todo: throw error
+evalOp1 _ _ = error "Unsupported unary operation" -- other operations are not defined
 
 -- | Handle binary operations
 evalOp2 :: Bop -> Value -> Value -> Value
@@ -185,8 +183,8 @@ eval (Block ss) = mapM_ evalS ss
 -- | Statement evaluator
 evalS :: Statement -> State Store ()
 evalS (Assign (Name v) e) = do
-    e' <- evalE e
-    envUpdate v (Gvalue e')
+  e' <- evalE e
+  envUpdate v (Gvalue e')
 evalS (If e sb) = do
   e' <- evalE e
   when (toBool e') $ eval sb
@@ -212,7 +210,7 @@ evalS (For (Name v) arr sb) =
     x : tl -> do
       envUpdate v (Gvalue x)
       eval sb
-      envRemove v 
+      envRemove v
       evalS (For (Name v) tl sb)
 evalS (CommandStatement cmd argsarr) = do
   cmd' <- evalE cmd
@@ -263,7 +261,7 @@ step (Block (x : xs)) =
       return $ Block xs
     Break ->
       return $ Block []
-    Continue -> 
+    Continue ->
       return $ Block []
     _ -> do
       evalS x
@@ -338,7 +336,7 @@ stepper = go initialStepper
         -- load a file for stepping
         Just (":l", [fn]) -> do
           putStr "loading file"
-          result <- P.parseLuFile fn
+          result <- P.parseShFile fn
           putStrLn "Printing parse output ---------"
           putStrLn (show result)
           putStrLn "End of parse output ----------"
@@ -376,7 +374,7 @@ stepper = go initialStepper
            in let newSS = getPrevSteppers numSteps ss
                in go newSS {block = block newSS, store = store newSS, history = Just newSS}
         -- evaluate an expression in the current state
-        _ -> case P.parseLuExp str of
+        _ -> case P.parseShExp str of
           Right exp -> do
             let v = evaluate exp (store ss)
             -- putStrLn (pretty v)

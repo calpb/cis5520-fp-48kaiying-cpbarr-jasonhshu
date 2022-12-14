@@ -43,7 +43,7 @@ data Statement
 data Expression
   = Var Name -- all variables including enviorment vars
   | Val Value -- literal values
-  | StringSub [Expression]
+  | StringSub [Expression] -- Generalization of StringVal, accepting substitution
   | Op1 Uop Expression -- unary operators
   | Op2 Expression Bop Expression -- binary operators
   | CommandExpression Expression [Expression] -- x=`echo "hello"`
@@ -53,7 +53,6 @@ data Value
   = IntVal Int -- 1
   | BoolVal Bool -- false, true
   | StringVal String -- "abd"
-  -- TODO: add arrays here
   deriving (Eq, Show, Ord)
 
 data Uop
@@ -175,15 +174,13 @@ wArithOps =
         ]
     ]
 
-wForLoop = 
-  Block 
-    [
-      For 
+wForLoop =
+  Block
+    [ For
         (Name "loopvar")
         [IntVal 1, IntVal 2, IntVal 3]
-        (Block
-            [
-              CommandStatement
+        ( Block
+            [ CommandStatement
                 (Val (StringVal "echo"))
                 [ Val (StringVal "Hello "),
                   Var "loopvar"
